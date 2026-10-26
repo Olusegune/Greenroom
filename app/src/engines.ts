@@ -67,9 +67,18 @@ export interface Prices {
 
 export const DEFAULT_PRICES: Prices = { currency: "USD", perKChars: {}, sfxClip: 0, directorCall: 0, designPreview: 0 };
 
+export type SoundEngine = "elevenlabs" | "kie";
+export const SOUND_ENGINES: { id: SoundEngine; label: string; ledger: string; provider: "eleven-sfx" | "kie-sfx"; key: "elevenlabs" | "kie" }[] = [
+  { id: "elevenlabs", label: "ElevenLabs sound effects", ledger: "ElevenLabs sound effects", provider: "eleven-sfx", key: "elevenlabs" },
+  { id: "kie", label: "Kie sound effects v2", ledger: "Kie sound effects", provider: "kie-sfx", key: "kie" },
+];
+export const soundEngineOf = (cfg: { soundEngine?: SoundEngine }) => SOUND_ENGINES.find((s) => s.id === cfg.soundEngine) ?? SOUND_ENGINES[0]!;
+
 export interface EnginesCfg {
   elevenModel: ElevenModel;
   quality: Quality;
+  /** Which engine makes sound clips and the atmosphere. */
+  soundEngine?: SoundEngine;
   prices: Prices;
   localServer: { url: string; model: string };
 }

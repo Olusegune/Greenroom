@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type PiperStatus } from "../api";
 import { useApp } from "../ctx";
-import { ENGINES, QUALITIES, type ElevenModel, type Quality } from "../engines";
+import { ENGINES, QUALITIES, SOUND_ENGINES, soundEngineOf, type ElevenModel, type Quality, type SoundEngine } from "../engines";
 import { Note, useBusy } from "../ui";
 import { BASIS_LABEL } from "../trust";
 import type { ConsentBasis } from "../types";
@@ -48,6 +48,27 @@ export default function Engines() {
 
       <Simple title={ENGINES.voicekiller.label} ready={keys.voicekiller} blurb={ENGINES.voicekiller.blurb} extra={<VkClone />} />
       <Simple title={ENGINES.kie.label} ready={keys.kie} blurb={ENGINES.kie.blurb} />
+      <div className="card stack">
+        <h2>Sound clips and atmosphere</h2>
+        <p className="muted small">Which engine makes sneezes, doors, footsteps and the background atmosphere. This is separate from the voices, so a project can speak with one engine and make its sounds with another.</p>
+        <label className="field" style={{ maxWidth: 360 }}>
+          Sound engine
+          <select value={soundEngineOf(engines).id} onChange={(e) => saveEngines({ ...engines, soundEngine: e.target.value as SoundEngine })}>
+            {SOUND_ENGINES.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+                {keys[s.key] ? "" : " (needs a key)"}
+              </option>
+            ))}
+          </select>
+        </label>
+        {!keys[soundEngineOf(engines).key] && (
+          <div>
+            <button onClick={() => go("settings")}>Add the key in Settings</button>
+          </div>
+        )}
+        <p className="muted small">Music is added from files on the Timeline. Making music with an engine such as Suno is not built yet.</p>
+      </div>
       <Piper />
       <LocalServer />
     </section>

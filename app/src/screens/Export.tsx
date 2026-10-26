@@ -5,7 +5,7 @@ import { encodeWav, fmtTime, fromBase64, lineFileName, planTimeline, renderPlan,
 import { fpsLabel, fpsOf, frameToSec, tcAt } from "../picture";
 import { useApp } from "../ctx";
 import { chosenTake } from "../direct";
-import { qualityFormat } from "../engines";
+import { qualityFormat, soundEngineOf } from "../engines";
 import { makeSound } from "../generate";
 import { applyGain, fmtDb, fmtLufs, measure, planNormalization, TARGETS, type Measure } from "../loudness";
 import { audacityLabels, buildMarkers, cueSheetCsv, otioTimeline } from "../markers";
@@ -68,12 +68,12 @@ export default function Export() {
   const makeBed = async () => {
     if (!project.bed.prompt.trim()) return;
     const price = priceLines([{ kind: "sound", count: 1 }]);
-    const ok = await confirmSpend({ title: "Make the atmosphere?", lines: [`"${project.bed.prompt.trim()}", ${bedSecs} seconds, looped under the scene`, "Uses ElevenLabs sound-effect credits", ...price.lines], warn: price.warn });
+    const ok = await confirmSpend({ title: "Make the atmosphere?", lines: [`"${project.bed.prompt.trim()}", ${bedSecs} seconds, looped under the scene`, `Uses ${soundEngineOf(engines).label} credits`, ...price.lines], warn: price.warn });
     if (!ok) return;
     await run(async () => {
       try {
-        const t = await makeSound(project.id, project.bed.prompt.trim(), bedSecs, qualityFormat(engines.quality));
-        addLedger({ kind: "sound", engine: "ElevenLabs sound effects", chars: project.bed.prompt.trim().length, items: [{ kind: "sound", count: 1 }], note: "atmosphere" });
+        const t = await makeSound(project.id, project.bed.prompt.trim(), bedSecs, qualityFormat(engines.quality), soundEngineOf(engines).provider);
+        addLedger({ kind: "sound", engine: soundEngineOf(engines).ledger, chars: project.bed.prompt.trim().length, items: [{ kind: "sound", count: 1 }], note: "atmosphere" });
         edit((p) => ({ ...p, bed: { ...p.bed, take: t } }));
       } catch (e) {
         toast((e as Error).message, true);
@@ -279,7 +279,7 @@ export default function Export() {
               </option>
             ))}
           </select>
-          <button onClick={() => void makeBed()} disabled={busy || !project.bed.prompt.trim() || !keys.elevenlabs}>
+          <button onClick={() => void makeBed()} disabled={busy || !project.bed.prompt.trim() || !keys[soundEngineOf(engines).key]}>
             {project.bed.take ? "Make another" : "Make atmosphere"}
           </button>
         </div>

@@ -4,7 +4,7 @@ import { applySuggestion, describe, isDirected, parseDirector, systemPrompt, use
 import { applyPreset, chosenTake, EMOTIONS, PRESETS, SOUNDS, toggleIn, vkUnsupported } from "../direct";
 import { VisualLine } from "../VisualLine";
 import { api } from "../api";
-import { ENGINES, qualityFormat } from "../engines";
+import { ENGINES, qualityFormat, soundEngineOf } from "../engines";
 import { makeSound, makeTake, modelLabel, plan, type Model } from "../generate";
 import { Plus, Play, Sparkle, Stop, Trash } from "../icons";
 import { stopPlayback, takeUrl } from "../media";
@@ -329,12 +329,12 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
   const addSound = async () => {
     if (!project || !snd.prompt.trim()) return;
     const price = priceLines([{ kind: "sound", count: 1 }]);
-    const ok = await confirmSpend({ title: "Make a sound clip?", lines: [`"${snd.prompt.trim()}", about ${snd.seconds} seconds`, "Uses ElevenLabs sound-effect credits", ...price.lines], warn: price.warn, skipKey: "sound" });
+    const ok = await confirmSpend({ title: "Make a sound clip?", lines: [`"${snd.prompt.trim()}", about ${snd.seconds} seconds`, `Uses ${soundEngineOf(engines).label} credits`, ...price.lines], warn: price.warn, skipKey: "sound" });
     if (!ok) return;
     setBusy(true);
     try {
-      const t = await makeSound(project.id, snd.prompt.trim(), snd.seconds, qualityFormat(engines.quality));
-      addLedger({ kind: "sound", engine: "ElevenLabs sound effects", chars: snd.prompt.trim().length, items: [{ kind: "sound", count: 1 }], note: snd.prompt.trim().slice(0, 60) });
+      const t = await makeSound(project.id, snd.prompt.trim(), snd.seconds, qualityFormat(engines.quality), soundEngineOf(engines).provider);
+      addLedger({ kind: "sound", engine: soundEngineOf(engines).ledger, chars: snd.prompt.trim().length, items: [{ kind: "sound", count: 1 }], note: snd.prompt.trim().slice(0, 60) });
       patch((l) => ({ ...l, events: [...l.events, { id: "e-" + uid(), prompt: snd.prompt.trim(), placement: snd.placement, seconds: snd.seconds, take: t }] }));
       setSnd({ ...snd, prompt: "" });
     } catch (e) {

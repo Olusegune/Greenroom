@@ -55,8 +55,8 @@ export async function makeTake(projectId: string, line: Line, voice: VoiceEntry,
 }
 
 /** A sound clip (laugh, sneeze, door) made by the sound-effects model, kept like any other take. */
-export async function makeSound(projectId: string, prompt: string, seconds: number, quality?: string) {
-  const out = await api.runClip({ provider: "eleven-sfx", text: prompt, seconds, quality });
+export async function makeSound(projectId: string, prompt: string, seconds: number, quality?: string, provider: "eleven-sfx" | "kie-sfx" = "eleven-sfx") {
+  const out = await api.runClip({ provider, text: prompt, seconds, quality });
   const id = "s-" + uid();
   const ext = out.mime === "audio/wav" ? "wav" : "mp3";
   await api.takeWrite(projectId, id, ext, out.audioB64);
