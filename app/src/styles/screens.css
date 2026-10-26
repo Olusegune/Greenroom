@@ -48,3 +48,27 @@
 .pic-block.sel { outline: 2px solid var(--focus); outline-offset: 1px; }
 .pic-block:active { cursor: grabbing; }
 .pic-head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--err); pointer-events: none; box-shadow: 0 0 6px rgba(255, 138, 128, 0.6); }
+
+/* Timeline */
+.tl-scroll { position: relative; overflow: auto; border: 1px solid var(--control-line); border-radius: var(--r-ctl); background: var(--surface-1); max-height: 520px; }
+.tl-scroll:focus-visible { outline-offset: -2px; }
+.tl-canvas { position: relative; min-height: 80px; }
+.tl-ruler { position: sticky; top: 0; z-index: 4; height: 26px; background: var(--surface-2); border-bottom: 1px solid var(--line); cursor: pointer; }
+.tl-tick { position: absolute; top: 5px; font-size: 11px; color: var(--text-3); font-family: var(--font-mono); padding-left: 4px; border-left: 1px solid var(--line-strong); height: 18px; white-space: nowrap; }
+.tl-lane { position: relative; border-bottom: 1px solid var(--line); }
+.tl-label { position: sticky; left: 0; z-index: 3; height: 100%; background: var(--surface-2); border-right: 1px solid var(--line); padding: 8px 10px; font-size: var(--fs-sm); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tl-track { position: absolute; top: 0; bottom: 0; }
+.tl-clip { position: absolute; border-radius: 4px; background: color-mix(in srgb, var(--c) 40%, transparent); border: 1px solid var(--c); overflow: hidden; cursor: grab; touch-action: none; user-select: none; }
+.tl-clip.fixed { cursor: default; opacity: 0.8; }
+.tl-clip.sel { outline: 2px solid var(--focus); outline-offset: 1px; z-index: 2; }
+.tl-clip.dragging { opacity: 0.85; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5); z-index: 5; }
+.tl-text { position: absolute; left: 6px; right: 6px; top: 50%; transform: translateY(-50%); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.tl-fade { position: absolute; top: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); pointer-events: none; }
+.tl-fade.in { left: 0; clip-path: polygon(0 0, 100% 0, 0 100%); }
+.tl-fade.out { right: 0; clip-path: polygon(0 0, 100% 0, 100% 100%); }
+.tl-duck { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.tl-duck polyline { stroke: var(--text); stroke-width: 1.6; vector-effect: non-scaling-stroke; opacity: 0.9; }
+.tl-handle { position: absolute; top: 0; bottom: 0; width: 7px; cursor: ew-resize; background: color-mix(in srgb, var(--c) 80%, transparent); }
+.tl-handle.l { left: 0; }
+.tl-handle.r { right: 0; }
+.tl-head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--err); pointer-events: none; z-index: 6; box-shadow: 0 0 6px rgba(255, 138, 128, 0.6); }

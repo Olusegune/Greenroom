@@ -2,18 +2,26 @@
 // calls (decoding, offline rendering) are kept thin at the bottom.
 
 import { chosenTake } from "./direct";
-import type { Line, Project } from "./types";
+import { applyCrossfades, duckCurve, duckOf, EDGE_FADE_IN, EDGE_FADE_OUT, fadeCurve, fitFades, type DuckCfg } from "./timeline";
+import { DEFAULT_MIX, type Line, type MixCfg, type MusicClip, type Project } from "./types";
 
 export interface Placed {
-  kind: "speech" | "event" | "bed";
+  kind: "speech" | "event" | "bed" | "music";
   lineId?: string;
   characterId?: string;
   /** The audio file used. `seconds` is its own length, known for sound clips and the atmosphere. */
-  ref: { id: string; ext: "mp3" | "wav"; seconds?: number };
+  ref: { id: string; ext: string; seconds?: number };
   start: number;
   seconds: number;
   /** Level in dB applied when mixing. */
   gainDb: number;
+  /** Seconds faded in and out at the clip's edges. */
+  fadeIn: number;
+  fadeOut: number;
+  /** Seconds skipped at the start of the file (music). */
+  trimIn?: number;
+  /** Dips under dialogue. */
+  duck?: boolean;
 }
 
 export interface Span {
@@ -27,8 +35,10 @@ export interface Plan {
   total: number;
   /** Line ids that have no chosen take and were left out. */
   missing: string[];
-  /** Where each spoken line starts and ends, for markers. */
+  /** Where each spoken line starts and ends, for markers and for ducking. */
   spans: Span[];
+  /** How music dips under the spans, or null when ducking is off. */
+  duck: DuckCfg | null;
 }
 
 export interface PlanOptions {
@@ -43,7 +53,8 @@ export interface PlanOptions {
  * starts speaking at that time in the picture, even if that overlaps the line before; a line without one follows the
  * line before it. Plans for a single scene ignore cues and run in order from zero.
  */
-export function planTimeline(p: Pick<Project, "lines" | "gap" | "bed">, sceneIndex?: number, opts: PlanOptions = {}): Plan {
+export function planTimeline(p: Pick<Project, "lines" | "gap" | "bed"> & { music?: MusicClip[]; mix?: Partial<MixCfg> }, sceneIndex?: number, opts: PlanOptions = {}): Plan {
+  const mix: MixCfg = { ...DEFAULT_MIX, ...(p.mix ?? {}) };
   const items: Placed[] = [];
   const spans: Span[] = [];
   const missing: string[] = [];
@@ -62,22 +73,30 @@ export function planTimeline(p: Pick<Project, "lines" | "gap" | "bed">, sceneInd
       t = Math.max(0, line.cue - lead);
     }
     for (const e of line.events.filter((x) => x.placement === "before" && x.take)) {
-      items.push({ kind: "event", lineId: line.id, characterId: line.characterId, ref: e.take!, start: t, seconds: e.take!.seconds, gainDb: 0 });
+      items.push({ kind: "event", lineId: line.id, characterId: line.characterId, ref: e.take!, start: t, seconds: e.take!.seconds, gainDb: 0, fadeIn: EDGE_FADE_IN, fadeOut: EDGE_FADE_OUT });
       t += e.take!.seconds;
     }
-    items.push({ kind: "speech", lineId: line.id, characterId: line.characterId, ref: { id: take.id, ext: take.ext }, start: t, seconds: take.seconds, gainDb: Number.isFinite(line.direction.gain) ? line.direction.gain! : 0 });
+    items.push({ kind: "speech", lineId: line.id, characterId: line.characterId, ref: { id: take.id, ext: take.ext }, start: t, seconds: take.seconds, gainDb: Number.isFinite(line.direction.gain) ? line.direction.gain! : 0, fadeIn: line.fadeIn ?? EDGE_FADE_IN, fadeOut: line.fadeOut ?? EDGE_FADE_OUT });
     spans.push({ lineId: line.id, start: t, end: t + take.seconds });
     t += take.seconds;
     for (const e of line.events.filter((x) => x.placement === "after" && x.take)) {
-      items.push({ kind: "event", lineId: line.id, characterId: line.characterId, ref: e.take!, start: t, seconds: e.take!.seconds, gainDb: 0 });
+      items.push({ kind: "event", lineId: line.id, characterId: line.characterId, ref: e.take!, start: t, seconds: e.take!.seconds, gainDb: 0, fadeIn: EDGE_FADE_IN, fadeOut: EDGE_FADE_OUT });
       t += e.take!.seconds;
     }
     t += Number.isFinite(line.direction.pauseAfter) ? Math.max(0, line.direction.pauseAfter) : p.gap;
     furthest = Math.max(furthest, t);
   }
+  if (sceneIndex === undefined) {
+    for (const c of p.music ?? []) {
+      const len = Math.max(0, Math.min(c.length, c.take.seconds - c.trimIn));
+      if (len <= 0) continue;
+      items.push({ kind: "music", ref: { id: c.take.id, ext: c.take.ext, seconds: c.take.seconds }, start: Math.max(0, c.start), seconds: len, gainDb: c.gainDb, fadeIn: c.fadeIn, fadeOut: c.fadeOut, trimIn: c.trimIn, duck: mix.duck && c.duck });
+      furthest = Math.max(furthest, Math.max(0, c.start) + len);
+    }
+  }
   const total = opts.exactTotal ?? Math.max(furthest, opts.minTotal ?? 0);
-  if (p.bed.take && total > 0) items.unshift({ kind: "bed", ref: p.bed.take, start: 0, seconds: total, gainDb: 0 });
-  return { items, total: spans.length || opts.minTotal || opts.exactTotal ? total : 0, missing, spans };
+  if (p.bed.take && total > 0) items.unshift({ kind: "bed", ref: p.bed.take, start: 0, seconds: total, gainDb: 0, fadeIn: 0, fadeOut: 0, duck: mix.duck && mix.duckAtmosphere });
+  return { items: applyCrossfades(items), total: spans.length || items.length || opts.minTotal || opts.exactTotal ? total : 0, missing, spans, duck: mix.duck ? duckOf(mix) : null };
 }
 
 export interface Stem {
@@ -97,6 +116,7 @@ export function stemSets(plan: Plan, characters: { id: string; name: string }[])
   }
   if (plan.items.some((i) => i.kind === "event")) out.push({ id: "events", name: "Sound clips", filter: (i) => i.kind === "event" });
   if (plan.items.some((i) => i.kind === "bed")) out.push({ id: "bed", name: "Atmosphere", filter: (i) => i.kind === "bed" });
+  if (plan.items.some((i) => i.kind === "music")) out.push({ id: "music", name: "Music", filter: (i) => i.kind === "music" });
   return out;
 }
 
@@ -260,7 +280,7 @@ export function lineFileName(index: number, characterName: string, ext: string):
   return `${String(index + 1).padStart(2, "0")} - ${characterName.replace(/[^\p{L}\p{N} _-]+/gu, "").trim() || "Line"}.${ext}`;
 }
 
-export type Loader = (ref: { id: string; ext: "mp3" | "wav" }) => Promise<AudioBuffer>;
+export type Loader = (ref: { id: string; ext: string }) => Promise<AudioBuffer>;
 
 const dbToGain = (db: number) => Math.pow(10, db / 20);
 
@@ -271,21 +291,35 @@ const dbToGain = (db: number) => Math.pow(10, db / 20);
 export async function renderPlan(plan: Plan, bedVolume: number, load: Loader, sampleRate = 48000, filter?: (p: Placed) => boolean): Promise<Float32Array[]> {
   const length = Math.max(1, Math.ceil(plan.total * sampleRate));
   const ctx = new OfflineAudioContext(2, length, sampleRate);
+  // The level music should have at every moment: dips under the spoken lines. Shared by every clip that ducks.
+  const duck = plan.duck && plan.total > 0 ? duckCurve(plan.spans, plan.total, plan.duck) : null;
   for (const it of plan.items) {
     if (filter && !filter(it)) continue;
     const src = ctx.createBufferSource();
     src.buffer = await load(it.ref);
-    const gain = ctx.createGain();
+    const level = ctx.createGain();
+    const fades = ctx.createGain();
     if (it.kind === "bed") {
       src.loop = true;
-      gain.gain.setValueAtTime(bedVolume, 0);
-      gain.gain.setValueAtTime(bedVolume, Math.max(0, it.seconds - 1.2));
-      gain.gain.linearRampToValueAtTime(0, it.seconds);
+      level.gain.setValueAtTime(bedVolume, 0);
+      level.gain.setValueAtTime(bedVolume, Math.max(0, it.seconds - 1.2));
+      level.gain.linearRampToValueAtTime(0, it.seconds);
     } else {
-      gain.gain.value = dbToGain(it.gainDb);
+      level.gain.value = dbToGain(it.gainDb);
+      // Fade in and out with equal-power curves, kept from overlapping inside a short clip.
+      const { fi, fo } = fitFades(it.seconds, it.fadeIn, it.fadeOut);
+      if (fi > 0.0005) fades.gain.setValueCurveAtTime(fadeCurve("in"), it.start, fi);
+      if (fo > 0.0005) fades.gain.setValueCurveAtTime(fadeCurve("out"), it.start + it.seconds - fo, fo);
     }
-    src.connect(gain).connect(ctx.destination);
-    src.start(it.start);
+    let tail: AudioNode = src.connect(fades).connect(level);
+    if (it.duck && duck) {
+      const d = ctx.createGain();
+      d.gain.setValueCurveAtTime(duck, 0, plan.total);
+      tail = tail.connect(d);
+    }
+    tail.connect(ctx.destination);
+    if (it.kind === "music") src.start(it.start, it.trimIn ?? 0, it.seconds);
+    else src.start(it.start);
     if (it.kind === "bed") src.stop(it.seconds);
   }
   const out = await ctx.startRendering();

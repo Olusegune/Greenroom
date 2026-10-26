@@ -71,7 +71,41 @@ pub fn project_list(root: &Path) -> Vec<ProjectInfo> {
 }
 
 fn ext_ok(ext: &str) -> bool {
-    matches!(ext, "mp3" | "wav" | "ogg")
+    matches!(ext, "mp3" | "wav" | "ogg" | "m4a" | "flac" | "aac")
+}
+
+/// Audio file types the owner may bring in (music, effects). The player decodes all of them.
+pub const IMPORT_EXTENSIONS: [&str; 6] = ["wav", "mp3", "m4a", "flac", "ogg", "aac"];
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Imported {
+    pub id: String,
+    pub ext: String,
+    pub name: String,
+    pub bytes: u64,
+    pub sha256: String,
+}
+
+/// Copies an audio file the owner chose into the project as a take that is never overwritten. The original stays where it is.
+pub fn import_audio(root: &Path, project: &str, src: &Path, id: &str, max_bytes: u64) -> Result<Imported, String> {
+    let ext = src.extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase()).filter(|e| IMPORT_EXTENSIONS.contains(&e.as_str())).ok_or("That is not an audio type Greenroom can open (WAV, MP3, M4A, FLAC, OGG, AAC).")?;
+    let meta = fs::metadata(src).map_err(|_| "That audio file could not be found.".to_string())?;
+    if !meta.is_file() {
+        return Err("That audio file could not be found.".into());
+    }
+    if meta.len() > max_bytes {
+        return Err(format!("That audio file is larger than {} MB.", max_bytes >> 20));
+    }
+    let bytes = fs::read(src).map_err(|_| "Could not read that audio file.".to_string())?;
+    if bytes.len() < 200 {
+        return Err("That audio file is empty or too short.".into());
+    }
+    take_write(root, project, id, &ext, &bytes)?;
+    use sha2::{Digest, Sha256};
+    let sha256 = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+    let name = src.file_name().map(|n| n.to_string_lossy().chars().take(120).collect()).unwrap_or_default();
+    Ok(Imported { id: id.into(), ext, name, bytes: bytes.len() as u64, sha256 })
 }
 
 pub fn take_write(root: &Path, project: &str, take: &str, ext: &str, bytes: &[u8]) -> Result<(), String> {
@@ -90,7 +124,7 @@ pub fn take_read(root: &Path, project: &str, take: &str) -> Result<Vec<u8>, Stri
         return Err(bad("take"));
     }
     let dir = project_dir(root, project)?.join("takes");
-    for ext in ["mp3", "wav", "ogg"] {
+    for ext in ["mp3", "wav", "ogg", "m4a", "flac", "aac"] {
         if let Ok(b) = fs::read(dir.join(format!("{take}.{ext}"))) {
             return Ok(b);
         }
@@ -172,6 +206,31 @@ mod tests {
         assert!(take_write(&r, "p1", "t1", "mp3", b"second").is_err());
         assert_eq!(take_read(&r, "p1", "t1").unwrap(), b"first");
         assert!(take_read(&r, "p1", "nope").is_err());
+        let _ = fs::remove_dir_all(&r);
+    }
+
+    #[test]
+    fn imports_an_audio_file_as_an_immutable_take_and_refuses_other_files() {
+        let r = tmp("import");
+        let src = r.join("Theme Music.MP3");
+        fs::create_dir_all(&r).unwrap();
+        fs::write(&src, vec![7u8; 5000]).unwrap();
+        let info = import_audio(&r, "p1", &src, "m-abc", 1 << 20).unwrap();
+        assert_eq!((info.ext.as_str(), info.bytes, info.name.as_str()), ("mp3", 5000, "Theme Music.MP3"));
+        assert_eq!(info.sha256.len(), 64);
+        assert_eq!(take_read(&r, "p1", "m-abc").unwrap().len(), 5000);
+        assert!(import_audio(&r, "p1", &src, "m-abc", 1 << 20).unwrap_err().contains("never overwritten"));
+        let exe = r.join("evil.exe");
+        fs::write(&exe, vec![1u8; 500]).unwrap();
+        assert!(import_audio(&r, "p1", &exe, "m-x", 1 << 20).unwrap_err().contains("not an audio type"));
+        assert!(import_audio(&r, "p1", &r.join("missing.wav"), "m-y", 1 << 20).unwrap_err().contains("could not be found"));
+        let big = r.join("big.wav");
+        fs::write(&big, vec![0u8; 3000]).unwrap();
+        assert!(import_audio(&r, "p1", &big, "m-z", 1000).unwrap_err().contains("larger than"));
+        let tiny = r.join("tiny.flac");
+        fs::write(&tiny, b"abc").unwrap();
+        assert!(import_audio(&r, "p1", &tiny, "m-t", 1 << 20).unwrap_err().contains("empty or too short"));
+        assert!(import_audio(&r, "p1", &src, "../x", 1 << 20).is_err());
         let _ = fs::remove_dir_all(&r);
     }
 

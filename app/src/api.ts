@@ -59,6 +59,15 @@ export interface VideoInfo {
 }
 export const VIDEO_EXTENSIONS = ["mp4", "mov", "m4v", "webm", "mkv", "avi", "mpg", "mpeg"];
 
+export interface Imported {
+  id: string;
+  ext: string;
+  name: string;
+  bytes: number;
+  sha256: string;
+}
+export const AUDIO_EXTENSIONS = ["wav", "mp3", "m4a", "flac", "ogg", "aac"];
+
 export interface ProjectInfo {
   id: string;
   name: string;
@@ -108,6 +117,11 @@ const real = {
   piperRemoveVoice: (key: string) => call<void>("piper_remove_voice", { key }),
   localVoices: () => call<string[]>("local_voices"),
   directorComplete: (system: string, user: string) => call<string>("director_complete", { system, user }),
+  audioImport: (project: string, path: string) => call<Imported>("audio_import", { project, path }),
+  pickAudio: async (): Promise<string | null> => {
+    const r = await openDialog({ multiple: false, directory: false, filters: [{ name: "Audio", extensions: AUDIO_EXTENSIONS }] });
+    return typeof r === "string" ? r : null;
+  },
   videoProbe: (path: string) => call<VideoInfo>("video_probe", { path }),
   videoAllow: (path: string) => call<void>("video_allow", { path }),
   /** Opens the Windows file picker. Returns null if the owner cancels. */

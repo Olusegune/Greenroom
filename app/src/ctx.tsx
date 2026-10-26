@@ -5,7 +5,7 @@ import { uid } from "./script";
 import { DEFAULT_ENGINES_CFG, DEFAULT_PRICES, type EnginesCfg } from "./engines";
 import { estimateCost, spendLines, type SpendItem } from "./trust";
 
-export type Tab = "home" | "write" | "cast" | "perform" | "picture" | "export" | "studio" | "voices" | "engines" | "lab" | "settings";
+export type Tab = "home" | "write" | "cast" | "perform" | "timeline" | "picture" | "export" | "studio" | "voices" | "engines" | "lab" | "settings";
 
 export interface SpendAsk {
   title: string;

@@ -205,6 +205,14 @@ export function productionReportMd({ project, library, prices, appVersion, now }
     if (issues.length) L.push("", "### Items to review", ...issues.flatMap((r) => r.issues.map((i) => `- **${esc(r.name)}**: ${i}`)));
     L.push("");
   }
+  const music = project.music ?? [];
+  L.push("## Music and imported audio", "");
+  if (music.length === 0) L.push("No music or imported audio is used.", "");
+  else {
+    L.push("| Name | Length used | Level | Ducks under dialogue | File fingerprint | Source and licence |", "|---|---|---|---|---|---|");
+    for (const m of music) L.push(`| ${esc(m.name)} | ${m.length.toFixed(1)} s | ${m.gainDb.toFixed(1)} dB | ${m.duck ? "yes" : "no"} | ${shortHash(m.take.sha256)} | ${m.source.trim() ? esc(m.source) : "not noted: check the rights before release"} |`);
+    L.push("");
+  }
   L.push("## Cost", "");
   if (byEngine.length === 0) L.push("Nothing has been generated with a paid engine in this project yet.", "");
   else {

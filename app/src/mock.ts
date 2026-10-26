@@ -95,6 +95,13 @@ export const mock: Api = {
     const lines = ids.map((id, i) => ({ id, emotion: i % 3 === 0 ? "annoyed" : "", sounds: i % 3 === 1 ? ["sighs"] : i % 4 === 2 ? ["laughs"] : [], note: i % 2 === 0 ? "a little tired, as if carrying a heavy box" : "", speed: 1, pauseAfter: 0.5 }));
     return ["Here you go:", "```json", JSON.stringify({ lines, atmosphere: "a busy kitchen, soft pots and pans" }), "```"].join("\n");
   },
+  pickAudio: async () => "C:/Demo/Theme Music.wav",
+  audioImport: async (_p: string, path: string) => {
+    await wait(300);
+    const id = "m-demo" + takes.size;
+    takes.set(id, { audioB64: tone(24, 220), mime: "audio/wav" });
+    return { id, ext: "wav", name: path.split(/[\/]/).pop() ?? "music.wav", bytes: 24 * 22050 * 2 + 44, sha256: "d".repeat(64) };
+  },
   videoProbe: async (path: string): Promise<VideoInfo> => ({ container: path.split(".").pop() ?? "mp4", known: false, fpsNum: 0, fpsDen: 0, durationSec: 0, width: 0, height: 0 }),
   videoAllow: async () => undefined,
   pickVideo: async () => "C:/Demo/Rough Cut.webm",

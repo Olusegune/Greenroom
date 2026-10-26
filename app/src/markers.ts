@@ -93,7 +93,7 @@ export function otioTimeline(project: Project, plan: Plan, fps: number, files: R
   for (const stem of stemSets(plan, chars)) {
     const items = plan.items.filter(stem.filter).sort((a, b) => a.start - b.start);
     const lanes: { cursor: number; children: unknown[] }[] = [];
-    const place = (name: string, at: number, dur: number, mediaSec: number, takeId: string, meta: object) => {
+    const place = (name: string, at: number, dur: number, mediaSec: number, takeId: string, meta: object, srcStart = 0) => {
       let lane = lanes.find((l) => l.cursor <= at + 1e-6);
       if (!lane) {
         lane = { cursor: 0, children: [] };
@@ -104,7 +104,7 @@ export function otioTimeline(project: Project, plan: Plan, fps: number, files: R
       lane.children.push({
         OTIO_SCHEMA: "Clip.2",
         name,
-        source_range: range(0, dur),
+        source_range: range(srcStart, dur),
         media_reference: target ? { OTIO_SCHEMA: "ExternalReference.1", target_url: fileUrl(target), available_range: range(0, mediaSec), metadata: {} } : { OTIO_SCHEMA: "MissingReference.1", name: "", available_range: range(0, mediaSec), metadata: {} },
         effects: [],
         markers: [],
@@ -122,6 +122,9 @@ export function otioTimeline(project: Project, plan: Plan, fps: number, files: R
           place("Atmosphere", at, dur, it.ref.seconds ?? it.seconds, it.ref.id, { kind: "atmosphere", volume: project.bed.volume });
           at += dur;
         }
+      } else if (it.kind === "music") {
+        const mc = project.music?.find((m) => m.take.id === it.ref.id);
+        place(mc?.name ?? "Music", it.start, it.seconds, it.ref.seconds ?? it.seconds, it.ref.id, { kind: "music", gain_db: it.gainDb, fade_in: it.fadeIn, fade_out: it.fadeOut, ducks_under_dialogue: !!it.duck, source: mc?.source }, it.trimIn ?? 0);
       } else {
         const line = project.lines.find((l) => l.id === it.lineId);
         const n = line ? project.lines.indexOf(line) + 1 : 0;

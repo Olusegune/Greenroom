@@ -134,3 +134,18 @@ describe("production report", () => {
     expect(md).toContain("Nothing has been generated with a paid engine");
   });
 });
+
+describe("production report: music", () => {
+  it("lists imported music with its fingerprint and says plainly when no licence is noted", () => {
+    const p = newProject("p3", "Scored", "");
+    p.music = [
+      { id: "m1", name: "Theme | main", take: { id: "t", ext: "mp3", seconds: 30, sha256: "abcdef0123456789abcdef" }, start: 0, gainDb: -6, fadeIn: 0, fadeOut: 1, trimIn: 0, length: 30, duck: true, source: "Licensed from Studio X, invoice 41" },
+      { id: "m2", name: "Stinger", take: { id: "t2", ext: "wav", seconds: 3 }, start: 5, gainDb: 0, fadeIn: 0, fadeOut: 0, trimIn: 0, length: 3, duck: false, source: " " },
+    ];
+    const md = productionReportMd({ project: p, library: [], prices, appVersion: "0.8.0", now: "now" });
+    expect(md).toContain("## Music and imported audio");
+    expect(md).toContain("| Theme / main | 30.0 s | -6.0 dB | yes | abcdef012345 | Licensed from Studio X, invoice 41 |");
+    expect(md).toContain("| Stinger | 3.0 s | 0.0 dB | no | none | not noted: check the rights before release |");
+    expect(productionReportMd({ project: newProject("p4", "Plain", ""), library: [], prices, appVersion: "0.8.0", now: "now" })).toContain("No music or imported audio is used.");
+  });
+});

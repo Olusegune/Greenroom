@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Provider, useApp, type Tab } from "./ctx";
-import { Cast as CastIcon, Export as ExportIcon, Eye, Gear, Home as HomeIcon, Layers, Shield, Mark, Render, Script, Speaker, Voices as VoicesIcon } from "./icons";
+import { Cast as CastIcon, Export as ExportIcon, Eye, Gear, Home as HomeIcon, Wave, Layers, Shield, Mark, Render, Script, Speaker, Voices as VoicesIcon } from "./icons";
 import Cast from "./screens/Cast";
 import Engines from "./screens/Engines";
 import Export from "./screens/Export";
@@ -9,6 +9,7 @@ import Studio from "./screens/Studio";
 import Lab from "./screens/Lab";
 import Perform from "./screens/Perform";
 import PictureScreen from "./screens/Picture";
+import Timeline from "./screens/Timeline";
 import Settings from "./screens/Settings";
 import Voices from "./screens/Voices";
 import Write from "./screens/Write";
@@ -42,7 +43,7 @@ function Shell() {
     </button>
   );
   const takes = project ? project.lines.filter((l) => l.takes.length > 0).length : 0;
-  const screens: Record<Tab, React.ReactNode> = { home: <Home />, write: <Write />, cast: <Cast />, perform: <Perform />, picture: <PictureScreen />, export: <Export />, studio: <Studio />, voices: <Voices />, engines: <Engines />, lab: <Lab />, settings: <Settings /> };
+  const screens: Record<Tab, React.ReactNode> = { home: <Home />, write: <Write />, cast: <Cast />, perform: <Perform />, timeline: <Timeline />, picture: <PictureScreen />, export: <Export />, studio: <Studio />, voices: <Voices />, engines: <Engines />, lab: <Lab />, settings: <Settings /> };
 
   return (
     <div className="shell">
@@ -58,6 +59,7 @@ function Shell() {
             <Item id="write" label="Script" icon={<Script size={18} />} count={project.lines.length ? String(project.lines.length) : undefined} />
             <Item id="cast" label="Cast" icon={<CastIcon size={18} />} />
             <Item id="perform" label="Perform" icon={<Render size={18} />} count={project.lines.length ? `${takes}/${project.lines.length}` : undefined} />
+            <Item id="timeline" label="Timeline" icon={<Wave size={18} />} />
             <Item id="picture" label="Picture" icon={<Eye size={18} />} count={project.picture ? "on" : undefined} />
             <Item id="export" label="Export" icon={<ExportIcon size={18} />} />
             <Item id="studio" label="Studio" icon={<Shield size={18} />} />

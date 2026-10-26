@@ -236,3 +236,51 @@ describe("exact length for a picture", () => {
     expect(planTimeline({ lines: [], gap: 0, bed }, undefined, { exactTotal: 7 }).total).toBe(7);
   });
 });
+
+describe("music, ducking and crossfades in the plan", () => {
+  const clip = (over: Partial<import("./types").MusicClip> = {}): import("./types").MusicClip => ({ id: "m1", name: "Theme", take: { id: "mt", ext: "mp3", seconds: 20 }, start: 1, gainDb: -6, fadeIn: 0.5, fadeOut: 2, trimIn: 0, length: 20, duck: true, source: "", ...over });
+  const spk = (id: string, secs: number, cue: number, ch = "c"): Line => ({ ...line(id, 0, secs), characterId: ch, direction: { ...DEFAULT_DIRECTION, pauseAfter: 0 }, cue });
+
+  it("adds music at its start with its trim, length, level and fades, and ducks it by default", () => {
+    const p = planTimeline({ lines: [spk("a", 2, 3)], gap: 0, bed, music: [clip({ trimIn: 4, length: 8 })] });
+    const m = p.items.find((i) => i.kind === "music")!;
+    expect(m).toMatchObject({ start: 1, seconds: 8, trimIn: 4, gainDb: -6, fadeIn: 0.5, fadeOut: 2, duck: true });
+    expect(m.ref).toMatchObject({ id: "mt", seconds: 20 });
+    expect(p.duck).toMatchObject({ amountDb: -12 });
+    expect(p.total).toBe(9);
+  });
+  it("does not play more of the file than exists after the trim, and skips an empty clip", () => {
+    const p = planTimeline({ lines: [spk("a", 2, 0)], gap: 0, bed, music: [clip({ trimIn: 15, length: 20 }), clip({ id: "m2", trimIn: 25 })] });
+    const music = p.items.filter((i) => i.kind === "music");
+    expect(music).toHaveLength(1);
+    expect(music[0]!.seconds).toBe(5);
+  });
+  it("respects the ducking switches", () => {
+    const off = planTimeline({ lines: [spk("a", 2, 0)], gap: 0, bed, music: [clip()], mix: { duck: false } });
+    expect(off.duck).toBeNull();
+    expect(off.items.find((i) => i.kind === "music")!.duck).toBe(false);
+    const clipOff = planTimeline({ lines: [spk("a", 2, 0)], gap: 0, bed, music: [clip({ duck: false })] });
+    expect(clipOff.items.find((i) => i.kind === "music")!.duck).toBe(false);
+    const withBed = { prompt: "rain", volume: 0.3, take: { id: "bed", ext: "mp3" as const, seconds: 5 } };
+    const bedDefault = planTimeline({ lines: [spk("a", 2, 0)], gap: 0, bed: withBed });
+    expect(bedDefault.items.find((i) => i.kind === "bed")!.duck).toBe(false);
+    const bedOn = planTimeline({ lines: [spk("a", 2, 0)], gap: 0, bed: withBed, mix: { duckAtmosphere: true } });
+    expect(bedOn.items.find((i) => i.kind === "bed")!.duck).toBe(true);
+  });
+  it("keeps music out of a single-scene plan, and gives it its own stem", () => {
+    expect(planTimeline({ lines: [spk("a", 2, 0)], gap: 0, bed, music: [clip()] }, 0).items.some((i) => i.kind === "music")).toBe(false);
+    const p = planTimeline({ lines: [spk("a", 2, 0)], gap: 0, bed, music: [clip()] });
+    const stems = stemSets(p, [{ id: "c", name: "ADA" }]);
+    expect(stems.map((s) => s.name)).toEqual(["ADA", "Music"]);
+    for (const it of p.items) expect(stems.filter((s) => s.filter(it))).toHaveLength(1);
+  });
+  it("gives lines their edge fades and crossfades a character's overlapping lines", () => {
+    const p = planTimeline({ lines: [spk("a", 3, 0), spk("b", 3, 2.5)], gap: 0, bed });
+    const [a, b] = p.items.filter((i) => i.kind === "speech");
+    expect(a!.fadeOut).toBeCloseTo(0.5, 9);
+    expect(b!.fadeIn).toBeCloseTo(0.5, 9);
+    expect(a!.fadeIn).toBe(0.005);
+    const custom = planTimeline({ lines: [{ ...spk("a", 3, 0), fadeIn: 0.2, fadeOut: 0.4 }], gap: 0, bed });
+    expect(custom.items[0]).toMatchObject({ fadeIn: 0.2, fadeOut: 0.4 });
+  });
+});

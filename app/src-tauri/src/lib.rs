@@ -253,6 +253,17 @@ fn video_allow(app: tauri::AppHandle, path: String) -> Result<(), String> {
     app.asset_protocol_scope().allow_file(&p).map_err(|_| "Could not open that video for playback.".to_string())
 }
 
+/// Brings an audio file the owner chose (for example a piece of music) into the project. The original is not touched.
+#[tauri::command]
+async fn audio_import(app: tauri::AppHandle, project: String, path: String) -> Result<store::Imported, String> {
+    let r = root(&app)?;
+    blocking(move || {
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        store::import_audio(&r, &project, std::path::Path::new(&path), &format!("m-{nanos:x}"), 120 << 20)
+    })
+    .await
+}
+
 #[tauri::command]
 fn project_list(app: tauri::AppHandle) -> Result<Vec<store::ProjectInfo>, String> {
     Ok(store::project_list(&root(&app)?))
@@ -410,7 +421,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             key_status, set_key, clear_key, run_clip, voices_mine, voices_voicekiller, voices_shared, voice_add_shared, voice_design, voice_design_save, voice_clone,
             voice_delete, preview_fetch, project_list, project_load, project_save, take_write, take_read, export_write, library_load, library_save,
-            save_report, video_probe, video_allow, director_complete, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
+            save_report, audio_import, video_probe, video_allow, director_complete, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
         ])
         .run(tauri::generate_context!())
         .expect("error while running Greenroom");

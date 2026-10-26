@@ -69,6 +69,9 @@ export interface Line {
   events: SoundEvent[];
   /** Seconds from the start of the picture at which this line starts speaking. Without one, the line follows the one before it. */
   cue?: number;
+  /** Seconds the line fades in and out at its edges. Defaults are a few milliseconds, just enough to avoid clicks. */
+  fadeIn?: number;
+  fadeOut?: number;
 }
 
 export interface Pronunciation {
@@ -108,6 +111,43 @@ export interface ExportCfg {
 
 export const DEFAULT_EXPORT: ExportCfg = { rate: 48000, bits: 24, target: "off", ceiling: -1, fps: 24, whole: true, scenes: false, lines: true, stems: false, markersInWav: true, labels: false, cueSheet: true, otio: false, matchPicture: true, report: true, manifest: true };
 
+/** How music and atmosphere dip under dialogue. */
+export interface MixCfg {
+  duck: boolean;
+  /** Also dip the atmosphere (music always does when ducking is on and the clip allows it). */
+  duckAtmosphere: boolean;
+  /** How far the music drops, in dB (negative). */
+  amountDb: number;
+  /** Seconds the dip begins before a line starts. */
+  attack: number;
+  /** Seconds the dip is held after a line ends. */
+  hold: number;
+  /** Seconds the music takes to come back. */
+  release: number;
+}
+
+export const DEFAULT_MIX: MixCfg = { duck: true, duckAtmosphere: false, amountDb: -12, attack: 0.15, hold: 0.25, release: 0.7 };
+
+/** A piece of music (or any long sound) the owner brought in. The file is copied into the project and never changed. */
+export interface MusicClip {
+  id: string;
+  name: string;
+  take: { id: string; ext: string; seconds: number; sha256?: string; bytes?: number };
+  /** Where it starts in the mix, in seconds. */
+  start: number;
+  gainDb: number;
+  fadeIn: number;
+  fadeOut: number;
+  /** Seconds skipped at the start of the file. */
+  trimIn: number;
+  /** Seconds of the file that play. */
+  length: number;
+  /** Dip under dialogue. */
+  duck: boolean;
+  /** Where it came from and the licence, for the production report. */
+  source: string;
+}
+
 /** A video the sound is being made for. The file stays where it is; only its path and facts are kept. */
 export interface Picture {
   path: string;
@@ -140,6 +180,8 @@ export interface Project {
   /** Spend limit for this project, in the currency set in Studio. */
   budget?: number;
   picture?: Picture;
+  music?: MusicClip[];
+  mix?: Partial<MixCfg>;
   ledger?: LedgerEntry[];
   createdAt: string;
   updatedAt: string;

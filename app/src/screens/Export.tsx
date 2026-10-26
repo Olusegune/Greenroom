@@ -144,8 +144,10 @@ export default function Export() {
         if (cfg.otio) {
           for (const it of plan.items.filter((x) => x.kind !== "speech")) {
             const a = await takeAudio(project.id, it.ref.id);
-            const name = it.kind === "bed" ? `Atmosphere.${it.ref.ext}` : `${it.ref.id}.${it.ref.ext}`;
-            if (!written[it.ref.id]) written[it.ref.id] = await save(it.kind === "bed" ? "Atmosphere" : "Sound clips", name, a.audioB64);
+            const mc = it.kind === "music" ? project.music?.find((m) => m.take.id === it.ref.id) : undefined;
+            const safe = (mc?.name ?? "Music").replace(/[^\p{L}\p{N} _-]+/gu, "").trim() || "Music";
+            const name = it.kind === "bed" ? `Atmosphere.${it.ref.ext}` : it.kind === "music" ? `${safe}.${it.ref.ext}` : `${it.ref.id}.${it.ref.ext}`;
+            if (!written[it.ref.id]) written[it.ref.id] = await save(it.kind === "bed" ? "Atmosphere" : it.kind === "music" ? "Music" : "Sound clips", name, a.audioB64);
           }
         }
         if (cfg.labels) await save("", `${stem} - markers.txt`, textBase64(audacityLabels(buildMarkers(project, plan))));

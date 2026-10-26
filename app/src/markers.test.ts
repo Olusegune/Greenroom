@@ -160,3 +160,21 @@ describe("markers past the end of the mix", () => {
     expect(m.map((x) => x.name)).toEqual(["01 ADA"]);
   });
 });
+
+describe("OpenTimelineIO with music", () => {
+  it("gives music its own track, starting inside the file where the trim begins", () => {
+    const p = project();
+    p.music = [{ id: "m1", name: "Theme", take: { id: "mus1", ext: "mp3", seconds: 30 }, start: 2, gainDb: -6, fadeIn: 0.5, fadeOut: 2, trimIn: 10, length: 8, duck: true, source: "x" }];
+    const doc = JSON.parse(otioTimeline(p, planTimeline(p), 24, { mus1: "C:/x/Theme.mp3" }));
+    const t = doc.tracks.children.find((x: { name: string }) => x.name === "Music");
+    expect(t).toBeTruthy();
+    expect(t.children[0].OTIO_SCHEMA).toBe("Gap.1");
+    expect(t.children[0].source_range.duration.value).toBe(2 * 24);
+    const c = t.children[1];
+    expect(c.name).toBe("Theme");
+    expect(c.source_range.start_time.value).toBe(10 * 24);
+    expect(c.source_range.duration.value).toBe(8 * 24);
+    expect(c.media_reference.available_range.duration.value).toBe(30 * 24);
+    expect(c.metadata.greenroom).toMatchObject({ kind: "music", gain_db: -6, ducks_under_dialogue: true });
+  });
+});
