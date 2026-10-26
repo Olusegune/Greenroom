@@ -245,7 +245,7 @@ fn make_clip(req: ClipReq) -> Result<Vec<u8>, String> {
             eleven_post(&format!("/v1/text-to-speech/{voice}?output_format=mp3_44100_128"), &json!({ "text": text, "model_id": model }))
         }
         "eleven-sfx" => eleven_post("/v1/sound-generation?output_format=mp3_44100_128", &json!({ "text": text, "duration_seconds": 3.0 })),
-        "kie-tts" => kie_run("elevenlabs/text-to-speech-turbo-2-5", json!({ "text": text })),
+        "kie-tts" => kie_run("elevenlabs/text-to-speech-turbo-2-5", json!({ "text": text, "voice": "EkK5I93UQWFDigLMpZcX" })),
         "kie-dialogue" => kie_run("elevenlabs/text-to-dialogue-v3", json!({ "dialogue": [{ "text": text, "voice": "EkK5I93UQWFDigLMpZcX" }] })),
         "kie-sfx" => kie_run("elevenlabs/sound-effect-v2", json!({ "text": text })),
         _ => Err("Unknown test type.".into()),
