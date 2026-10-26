@@ -1,30 +1,35 @@
 import { useRef, useState } from "react";
-import { audioPlan, previewScene } from "../preview";
 import { useApp } from "../ctx";
-import { chosenTake, composeText, EMOTIONS, SOUNDS, toggleIn, vkUnsupported } from "../direct";
+import { applySuggestion, describe, isDirected, parseDirector, systemPrompt, userPrompt, type DirectorResult } from "../director";
+import { applyPreset, chosenTake, EMOTIONS, INSERT_GROUPS, insertAt, PRESETS, SOUNDS, toggleIn, vkUnsupported } from "../direct";
+import { api } from "../api";
 import { ENGINES } from "../engines";
 import { makeSound, makeTake, modelLabel, plan, type Model } from "../generate";
-import { Plus, Play, Stop, Trash } from "../icons";
+import { Plus, Play, Sparkle, Stop, Trash } from "../icons";
 import { stopPlayback, takeUrl } from "../media";
+import { audioPlan, previewScene } from "../preview";
 import { uid } from "../script";
-import type { Character, Line, VoiceEntry } from "../types";
+import type { Character, Line, Pronunciation, VoiceEntry } from "../types";
 import { Empty, Note, PlayButton } from "../ui";
 
 export default function Perform() {
-  const { project, edit, library, confirmSpend, toast, go, engines, saveEngines } = useApp();
+  const { project, edit, library, confirmSpend, toast, go, engines, saveEngines, keys } = useApp();
   const model: Model = engines.elevenModel;
   const setModel = (m: Model) => saveEngines({ ...engines, elevenModel: m });
   const [running, setRunning] = useState<{ done: number; total: number } | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [thinking, setThinking] = useState(false);
+  const [review, setReview] = useState<DirectorResult | null>(null);
   const stop = useRef(false);
   if (!project) return null;
 
+  const dict: Pronunciation[] = project.pronunciations ?? [];
   const charOf = (l: Line): Character | undefined => project.characters.find((c) => c.id === l.characterId);
   const voiceOf = (l: Line): VoiceEntry | undefined => library.find((v) => v.id === charOf(l)?.voiceId);
   const patchLine = (id: string, fn: (l: Line) => Line) => edit((p) => ({ ...p, lines: p.lines.map((l) => (l.id === id ? fn(l) : l)) }));
 
   const spend = (lines: Line[]) => {
-    const chars = lines.reduce((n, l) => n + (voiceOf(l) ? plan(l, voiceOf(l)!, model).text.length : 0), 0);
+    const chars = lines.reduce((n, l) => n + (voiceOf(l) ? plan(l, voiceOf(l)!, model, dict).text.length : 0), 0);
     return { chars, voices: [...new Set(lines.map((l) => voiceOf(l)?.name).filter(Boolean))].join(", ") };
   };
 
@@ -43,12 +48,12 @@ export default function Perform() {
     }
     try {
       for (let i = 0; i < count; i++) {
-        const t = await makeTake(project.id, line, voice, model);
+        const t = await makeTake(project.id, line, voice, model, dict);
         patchLine(line.id, (l) => ({ ...l, takes: [...l.takes, t], chosen: t.id }));
       }
       return true;
-    } catch (e) {
-      toast((e as Error).message, true);
+    } catch (e2) {
+      toast((e2 as Error).message, true);
       return false;
     }
   };
@@ -68,7 +73,7 @@ export default function Perform() {
       if (stop.current) break;
       const line = todo[i]!;
       try {
-        const t = await makeTake(project.id, line, voiceOf(line)!, model);
+        const t = await makeTake(project.id, line, voiceOf(line)!, model, dict);
         patchLine(line.id, (l) => ({ ...l, takes: [...l.takes, t], chosen: t.id }));
       } catch (e) {
         toast(`Stopped at line ${project.lines.indexOf(line) + 1}: ${(e as Error).message}`, true);
@@ -93,6 +98,20 @@ export default function Perform() {
       toast((e as Error).message, true);
       setPlaying(false);
     }
+  };
+
+  const askDirector = async () => {
+    const chars = userPrompt(project).length + systemPrompt().length;
+    const ok = await confirmSpend({ title: "Ask the AI Director?", lines: [`Sends your script (${project.lines.length} lines, about ${chars} characters) to a Kie text model`, "It only suggests. You review everything before anything changes.", "Uses a small amount of Kie credit"] });
+    if (!ok) return;
+    setThinking(true);
+    try {
+      const reply = await api.directorComplete(systemPrompt(), userPrompt(project));
+      setReview(parseDirector(reply, project.lines.map((l) => l.id)));
+    } catch (e) {
+      toast((e as Error).message, true);
+    }
+    setThinking(false);
   };
 
   if (project.lines.length === 0) {
@@ -121,15 +140,20 @@ export default function Perform() {
       <div className="row between top">
         <div>
           <h1>Perform</h1>
-          <p className="lede">Pick how each line is delivered, add sounds like laughs or coughs, then make takes and choose the best. Nothing is generated until you confirm.</p>
+          <p className="lede">Direct each line: pick a style or write a note, add sounds like laughs, grunts or coughs, then make takes and choose the best. Nothing is generated until you confirm.</p>
         </div>
-        <label className="field" style={{ minWidth: 210 }}>
-          ElevenLabs model
-          <select value={model} onChange={(e) => setModel(e.target.value as Model)}>
-            <option value="eleven_v4">Eleven v4 (newest, best)</option>
-            <option value="eleven_v3">Eleven v3</option>
-          </select>
-        </label>
+        <div className="stack" style={{ minWidth: 220 }}>
+          <label className="field">
+            ElevenLabs model
+            <select value={model} onChange={(e) => setModel(e.target.value as Model)}>
+              <option value="eleven_v4">Eleven v4 (newest, best)</option>
+              <option value="eleven_v3">Eleven v3</option>
+            </select>
+          </label>
+          <button onClick={() => void askDirector()} disabled={thinking || !keys.kie} title={keys.kie ? "" : "Add your Kie key in Settings first"}>
+            <Sparkle size={16} /> {thinking ? "The director is reading…" : "Direct with AI"}
+          </button>
+        </div>
       </div>
       {noVoice > 0 && (
         <Note kind="warn">
@@ -146,7 +170,7 @@ export default function Perform() {
           <div key={si} className="stack">
             <h3 className="scene-title">{title}</h3>
             {lines.map((line) => (
-              <LineCard key={line.id} line={line} index={project.lines.indexOf(line) + 1} character={charOf(line)} voice={voiceOf(line)} model={model} patch={(fn) => patchLine(line.id, fn)} make={make} />
+              <LineCard key={line.id} line={line} index={project.lines.indexOf(line) + 1} character={charOf(line)} voice={voiceOf(line)} model={model} dict={dict} patch={(fn) => patchLine(line.id, fn)} make={make} />
             ))}
           </div>
         );
@@ -180,24 +204,125 @@ export default function Perform() {
           </>
         )}
       </div>
+      {review && <DirectorReview result={review} onClose={() => setReview(null)} />}
     </section>
   );
 }
 
-function LineCard({ line, index, character, voice, model, patch, make }: { line: Line; index: number; character?: Character; voice?: VoiceEntry; model: Model; patch: (fn: (l: Line) => Line) => void; make: (l: Line, n?: number) => Promise<boolean> }) {
+function DirectorReview({ result, onClose }: { result: DirectorResult; onClose: () => void }) {
+  const { project, edit, toast } = useApp();
+  const [keepMine, setKeepMine] = useState(true);
+  const lineOf = (id: string) => project!.lines.find((l) => l.id === id)!;
+  const defaults = (keep: boolean) => new Set(result.suggestions.filter((s) => !(keep && isDirected(lineOf(s.id).direction))).map((s) => s.id));
+  const [picked, setPicked] = useState<Set<string>>(() => defaults(true));
+  const [atmos, setAtmos] = useState(!!result.atmosphere && !project!.bed.prompt.trim());
+
+  const apply = () => {
+    edit((p) => ({
+      ...p,
+      lines: p.lines.map((l) => {
+        const s = result.suggestions.find((x) => x.id === l.id);
+        return s && picked.has(l.id) ? { ...l, direction: applySuggestion(l.direction, s) } : l;
+      }),
+      bed: atmos && result.atmosphere ? { ...p.bed, prompt: result.atmosphere } : p.bed,
+    }));
+    toast(`Applied to ${picked.size} line${picked.size === 1 ? "" : "s"}. Nothing was generated.`);
+    onClose();
+  };
+
+  return (
+    <div className="scrim" role="presentation">
+      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="dir-t" style={{ width: "min(720px, 94vw)" }}>
+        <h2 id="dir-t">The director&apos;s suggestions</h2>
+        <p className="muted small">Tick the lines you want. Nothing changes until you press Apply, and nothing is spoken or paid for yet.</p>
+        <label className="row small" style={{ margin: "8px 0" }}>
+          <input
+            type="checkbox"
+            checked={keepMine}
+            onChange={(e) => {
+              setKeepMine(e.target.checked);
+              setPicked(defaults(e.target.checked));
+            }}
+          />
+          Leave lines I have already directed alone
+        </label>
+        <div className="stack" style={{ maxHeight: "50vh", overflow: "auto" }}>
+          {result.suggestions.map((s) => {
+            const l = lineOf(s.id);
+            const who = project!.characters.find((c) => c.id === l.characterId)?.name ?? "?";
+            return (
+              <label key={s.id} className="take" style={{ alignItems: "flex-start" }}>
+                <input
+                  type="checkbox"
+                  checked={picked.has(s.id)}
+                  onChange={(e) =>
+                    setPicked((set) => {
+                      const n = new Set(set);
+                      if (e.target.checked) n.add(s.id);
+                      else n.delete(s.id);
+                      return n;
+                    })
+                  }
+                  style={{ marginTop: 4 }}
+                />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span className="speaker">{who}</span> <span className="muted small">{l.text.slice(0, 80)}</span>
+                  <br />
+                  <span className="small">{describe(s)}</span>
+                  {isDirected(l.direction) && (
+                    <span className="badge warn" style={{ marginLeft: 8 }}>
+                      already directed
+                    </span>
+                  )}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        {result.atmosphere && (
+          <label className="row small" style={{ marginTop: 8 }}>
+            <input type="checkbox" checked={atmos} onChange={(e) => setAtmos(e.target.checked)} />
+            Use “{result.atmosphere}” as the atmosphere idea on the Export screen
+          </label>
+        )}
+        <div className="row end" style={{ marginTop: 16 }}>
+          <button onClick={onClose}>Cancel</button>
+          <button className="primary" disabled={picked.size === 0 && !atmos} onClick={apply}>
+            Apply to {picked.size} line{picked.size === 1 ? "" : "s"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LineCard({ line, index, character, voice, model, dict, patch, make }: { line: Line; index: number; character?: Character; voice?: VoiceEntry; model: Model; dict: Pronunciation[]; patch: (fn: (l: Line) => Line) => void; make: (l: Line, n?: number) => Promise<boolean> }) {
   const { project, confirmSpend, toast } = useApp();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  const [menu, setMenu] = useState(false);
   const [snd, setSnd] = useState({ prompt: "", placement: "after" as "before" | "after", seconds: 2 });
+  const area = useRef<HTMLTextAreaElement>(null);
   const d = line.direction;
   const noTags = !!voice && !ENGINES[voice.provider].tags;
-  const sent = voice ? plan(line, voice, model).text : composeText(line);
+  const ignoresNote = !!voice && !ENGINES[voice.provider].tags && voice.provider !== "voicekiller";
+  const sent = voice ? plan(line, voice, model, dict).text : line.text;
   const chosen = chosenTake(line);
 
   const go = async (n: number) => {
     setBusy(true);
     await make(line, n);
     setBusy(false);
+  };
+
+  const insert = (tag: string) => {
+    const caret = area.current?.selectionStart ?? line.text.length;
+    const r = insertAt(line.text, caret, tag);
+    patch((l) => ({ ...l, text: r.text }));
+    setTimeout(() => {
+      area.current?.focus();
+      area.current?.setSelectionRange(r.caret, r.caret);
+    }, 0);
   };
 
   const addSound = async () => {
@@ -224,7 +349,48 @@ function LineCard({ line, index, character, voice, model, patch, make }: { line:
         </span>
         {chosen ? <span className="badge ok">{line.takes.length} take{line.takes.length === 1 ? "" : "s"}</span> : <span className="badge">no take yet</span>}
       </div>
-      <textarea aria-label={`Line ${index} text`} rows={2} value={line.text} onChange={(e) => patch((l) => ({ ...l, text: e.target.value }))} />
+      <textarea ref={area} aria-label={`Line ${index} text`} rows={2} value={line.text} onChange={(e) => patch((l) => ({ ...l, text: e.target.value }))} />
+      <div className="row wrap">
+        <button className="sm" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+          <Plus size={14} /> Insert a sound into the words
+        </button>
+        <select
+          aria-label="Style preset"
+          value=""
+          onChange={(e) => {
+            const p = PRESETS.find((x) => x.id === e.target.value);
+            if (p) patch((l) => ({ ...l, direction: applyPreset(l.direction, p) }));
+          }}
+        >
+          <option value="">Style preset…</option>
+          {PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <input type="text" aria-label={`Director's note for line ${index}`} placeholder="Director's note: how to say it, in plain words" value={d.note ?? ""} onChange={(e) => patch((l) => ({ ...l, direction: { ...l.direction, note: e.target.value } }))} style={{ flex: 1, minWidth: 220 }} />
+      </div>
+      {menu && (
+        <div className="card stack" role="group" aria-label="Insert a sound">
+          {INSERT_GROUPS.map((g) => (
+            <div key={g.title} className="row wrap">
+              <span className="muted small" style={{ width: 110 }}>
+                {g.title}
+              </span>
+              <span className="chips">
+                {g.tags.map((t) => (
+                  <button key={t.tag} className="chip" aria-pressed="false" title={noTags ? `${ENGINES[voice!.provider].label} cannot make this` : t.verified ? "Heard and approved" : "Not yet listened to"} onClick={() => insert(t.tag)}>
+                    {t.tag}
+                    {t.verified ? "" : " ·"}
+                  </button>
+                ))}
+              </span>
+            </div>
+          ))}
+          <p className="muted small">A dot means not yet listened to. The sound goes where your cursor was in the words above.</p>
+        </div>
+      )}
       <div className="chips" role="group" aria-label="How it is said">
         {EMOTIONS.map((e) => (
           <button key={e.tag} className="chip" aria-pressed={d.emotion === e.tag} title={e.verified ? "Heard and approved" : "Not yet listened to"} onClick={() => patch((l) => ({ ...l, direction: { ...l.direction, emotion: l.direction.emotion === e.tag ? "" : e.tag } }))}>
@@ -245,6 +411,7 @@ function LineCard({ line, index, character, voice, model, patch, make }: { line:
         ))}
       </div>
       {noTags && vkUnsupported(line).length > 0 && <Note kind="warn">{ENGINES[voice!.provider].label} cannot make {vkUnsupported(line).join(", ")}. Pick an ElevenLabs voice, or add a sound clip below.</Note>}
+      {ignoresNote && (d.note ?? "").trim() && <p className="muted small">{ENGINES[voice!.provider].label} ignores the director&apos;s note. ElevenLabs and VoiceKiller use it.</p>}
       <div className="row wrap">
         <label className="row small muted">
           Speed
@@ -289,12 +456,12 @@ function LineCard({ line, index, character, voice, model, patch, make }: { line:
           Make 3 takes
         </button>
         <button className="sm ghost" onClick={() => setOpen(!open)} aria-expanded={open}>
-          <Plus size={14} /> Sound clip (sneeze, door, steps…)
+          <Plus size={14} /> Sound clip (sneeze, door, heavy lift…)
         </button>
       </div>
       {open && (
         <div className="row wrap">
-          <input type="text" aria-label="Describe the sound" placeholder="A woman sneezing once" value={snd.prompt} onChange={(e) => setSnd({ ...snd, prompt: e.target.value })} style={{ flex: 1, minWidth: 200 }} />
+          <input type="text" aria-label="Describe the sound" placeholder="A man grunting as he lifts a heavy box" value={snd.prompt} onChange={(e) => setSnd({ ...snd, prompt: e.target.value })} style={{ flex: 1, minWidth: 200 }} />
           <select aria-label="Where" value={snd.placement} onChange={(e) => setSnd({ ...snd, placement: e.target.value as "before" | "after" })}>
             <option value="after">after the line</option>
             <option value="before">before the line</option>

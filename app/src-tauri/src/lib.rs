@@ -288,6 +288,15 @@ fn save_report(app: tauri::AppHandle, text: String) -> Result<String, String> {
     Ok(file.to_string_lossy().into_owned())
 }
 
+/// The AI Director: one question to a Kie text model. The prompt is built in the app; this only carries it.
+#[tauri::command]
+async fn director_complete(system: String, user: String) -> Result<String, String> {
+    if system.len() > 20_000 || user.len() > 60_000 {
+        return Err("That scene is too long to send in one go. Try one scene at a time.".into());
+    }
+    blocking(move || kie::Client::new(kie::BASE, &get_key("kie")?).chat(kie::DIRECTOR_MODEL, &system, &user)).await
+}
+
 // ---- engines: local server settings, Piper ---------------------------------------------------------------------
 
 fn server_cfg(root: &std::path::Path) -> local::ServerCfg {
@@ -383,7 +392,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             key_status, set_key, clear_key, run_clip, voices_mine, voices_voicekiller, voices_shared, voice_add_shared, voice_design, voice_design_save, voice_clone,
             voice_delete, preview_fetch, project_list, project_load, project_save, take_write, take_read, export_write, library_load, library_save,
-            save_report, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
+            save_report, director_complete, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
         ])
         .run(tauri::generate_context!())
         .expect("error while running Greenroom");

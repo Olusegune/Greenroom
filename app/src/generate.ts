@@ -1,25 +1,25 @@
 // Making one take: pick the engine from the voice, shape the text for it, save the audio, remember its length.
 
 import { api, type Provider } from "./api";
-import { composeText, stripTags, vkInstructions } from "./direct";
+import { applyPronunciations, composeText, stripTags, vkInstructions } from "./direct";
 import { ENGINES, providerFor, type ElevenModel } from "./engines";
 import { remember } from "./media";
 import { uid } from "./script";
-import type { Line, Take, VoiceEntry } from "./types";
+import type { Line, Pronunciation, Take, VoiceEntry } from "./types";
 
 export type Model = ElevenModel;
 
 /** What is sent for this line and voice. Engines without tags get the plain words, plus delivery in words where they take it. */
-export function plan(line: Line, voice: VoiceEntry, model: Model): { provider: Provider; text: string; instructions?: string; model: Take["model"] } {
+export function plan(line: Line, voice: VoiceEntry, model: Model, dict: Pronunciation[] = []): { provider: Provider; text: string; instructions?: string; model: Take["model"] } {
   const e = voice.provider;
   const provider = providerFor(e, model, voice.vkClone);
-  if (ENGINES[e].tags) return { provider, text: composeText(line), model };
-  const instructions = e === "voicekiller" ? vkInstructions(line.direction.emotion, line.direction.speed) : undefined;
-  return { provider, text: stripTags(line.text), instructions, model: e as Take["model"] };
+  if (ENGINES[e].tags) return { provider, text: applyPronunciations(composeText(line), dict), model };
+  const instructions = e === "voicekiller" ? vkInstructions(line.direction.emotion, line.direction.speed, line.direction.note) : undefined;
+  return { provider, text: applyPronunciations(stripTags(line.text), dict), instructions, model: e as Take["model"] };
 }
 
-export async function makeTake(projectId: string, line: Line, voice: VoiceEntry, model: Model): Promise<Take> {
-  const p = plan(line, voice, model);
+export async function makeTake(projectId: string, line: Line, voice: VoiceEntry, model: Model, dict: Pronunciation[] = []): Promise<Take> {
+  const p = plan(line, voice, model, dict);
   const out = await api.runClip({ provider: p.provider, text: p.text, voice: voice.id, speed: line.direction.speed, instructions: p.instructions });
   const id = "t-" + uid();
   const ext = out.mime === "audio/wav" ? "wav" : "mp3";

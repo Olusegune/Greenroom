@@ -89,5 +89,11 @@ export const mock: Api = {
   piperInstallVoice: async (k) => (await wait(900), void piperVoices.add(k)),
   piperRemoveVoice: async (k) => void piperVoices.delete(k),
   localVoices: async () => (await wait(), ["af_bella", "am_adam"]),
+  directorComplete: async (_s: string, user: string) => {
+    await wait(700);
+    const ids = [...user.matchAll(/^(l-[\w-]+) \|/gm)].map((x) => x[1]!);
+    const lines = ids.map((id, i) => ({ id, emotion: i % 3 === 0 ? "annoyed" : "", sounds: i % 3 === 1 ? ["sighs"] : i % 4 === 2 ? ["laughs"] : [], note: i % 2 === 0 ? "a little tired, as if carrying a heavy box" : "", speed: 1, pauseAfter: 0.5 }));
+    return ["Here you go:", "```json", JSON.stringify({ lines, atmosphere: "a busy kitchen, soft pots and pans" }), "```"].join("\n");
+  },
   saveReport: async () => "C:\\Users\\you\\Documents\\Greenroom\\listening-report.md",
 };

@@ -109,6 +109,7 @@ export default function Cast() {
           );
         })}
       </div>
+      <Pronunciations />
       <div className="row">
         {missing > 0 ? <span className="muted">{missing} character{missing === 1 ? "" : "s"} still need a voice.</span> : <span className="ok-text">Everyone has a voice.</span>}
         <span className="spacer" />
@@ -117,5 +118,43 @@ export default function Cast() {
         </button>
       </div>
     </section>
+  );
+}
+
+/** Names and words that voices get wrong. The swap is made only in what is sent, so the script and the line text stay as written. */
+function Pronunciations() {
+  const { project, edit } = useApp();
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  if (!project) return null;
+  const rules = project.pronunciations ?? [];
+  const add = () => {
+    if (!from.trim() || !to.trim()) return;
+    edit((p) => ({ ...p, pronunciations: [...(p.pronunciations ?? []).filter((r) => r.from.toLowerCase() !== from.trim().toLowerCase()), { from: from.trim(), to: to.trim() }] }));
+    setFrom("");
+    setTo("");
+  };
+  return (
+    <div className="card stack">
+      <h2>Pronunciation</h2>
+      <p className="muted small">If a voice says a name wrong, write how it should sound, for example Tunde becomes Toon-day. Only what is sent to the voice changes. Takes you already made keep their old sound, so make new ones.</p>
+      {rules.map((r) => (
+        <div key={r.from} className="row between">
+          <span>
+            <code>{r.from}</code> → <code>{r.to}</code>
+          </span>
+          <button className="sm ghost" aria-label={`Remove ${r.from}`} onClick={() => edit((p) => ({ ...p, pronunciations: (p.pronunciations ?? []).filter((x) => x.from !== r.from) }))}>
+            Remove
+          </button>
+        </div>
+      ))}
+      <div className="row wrap">
+        <input type="text" aria-label="Written as" placeholder="Written as: Tunde" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <input type="text" aria-label="Spoken as" placeholder="Spoken as: Toon-day" value={to} onChange={(e) => setTo(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+        <button disabled={!from.trim() || !to.trim()} onClick={add}>
+          Add
+        </button>
+      </div>
+    </div>
   );
 }

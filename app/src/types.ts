@@ -29,6 +29,8 @@ export interface SoundEvent {
 
 export interface Direction {
   emotion: string;
+  /** The director's note in plain words, such as "tired, as if lifting something heavy". */
+  note: string;
   sounds: string[];
   speed: number;
   pauseAfter: number;
@@ -43,6 +45,11 @@ export interface Line {
   takes: Take[];
   chosen?: string;
   events: SoundEvent[];
+}
+
+export interface Pronunciation {
+  from: string;
+  to: string;
 }
 
 export interface Bed {
@@ -61,6 +68,8 @@ export interface Project {
   lines: Line[];
   bed: Bed;
   gap: number;
+  /** Written form to spoken form, applied to the words sent to a voice, never to the script itself. */
+  pronunciations: Pronunciation[];
   createdAt: string;
   updatedAt: string;
 }
@@ -93,8 +102,8 @@ export interface VoiceInfo {
   previewUrl?: string | null;
 }
 
-export const DEFAULT_DIRECTION: Direction = { emotion: "", sounds: [], speed: 1, pauseAfter: 0.4 };
+export const DEFAULT_DIRECTION: Direction = { emotion: "", note: "", sounds: [], speed: 1, pauseAfter: 0.4 };
 
 export function newProject(id: string, name: string, now: string): Project {
-  return { version: 1, id, name, script: "", scenes: ["Scene 1"], characters: [], lines: [], bed: { prompt: "", volume: 0.25 }, gap: 0.4, createdAt: now, updatedAt: now };
+  return { version: 1, id, name, script: "", scenes: ["Scene 1"], characters: [], lines: [], bed: { prompt: "", volume: 0.25 }, gap: 0.4, pronunciations: [], createdAt: now, updatedAt: now };
 }
