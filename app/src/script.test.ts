@@ -52,6 +52,21 @@ describe("parseScript", () => {
     expect(b.characters).toHaveLength(1);
   });
 
+  it("reads plain text with no names as one narrator, a paragraph per line", () => {
+    const one = parseScript("i am happy", [], [], gen);
+    expect(one.characters.map((c) => c.name)).toEqual(["Narrator"]);
+    expect(one.lines.map((l) => l.text)).toEqual(["i am happy"]);
+    const many = parseScript("First thought\ncontinues here.\n\nSecond paragraph.", [], [], gen);
+    expect(many.lines.map((l) => l.text)).toEqual(["First thought continues here.", "Second paragraph."]);
+    expect(parseScript("# Act\nHello world", [], [], gen).lines).toHaveLength(1);
+  });
+
+  it("still ignores stage direction when the script has speakers", () => {
+    const p = parseScript("ADA: Hi.\n\nShe waves.\n\nADA: Bye.", [], [], gen);
+    expect(p.lines.map((l) => l.text)).toEqual(["Hi.", "Bye."]);
+    expect(p.characters.map((c) => c.name)).toEqual(["ADA"]);
+  });
+
   it("gives an empty script one scene and nothing else", () => {
     const p = parseScript("", [], [], gen);
     expect(p).toMatchObject({ scenes: ["Scene 1"], characters: [], lines: [] });

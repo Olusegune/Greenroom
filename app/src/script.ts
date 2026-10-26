@@ -20,6 +20,8 @@ export interface Parsed {
 
 export type IdGen = () => string;
 
+export const NARRATOR = "Narrator";
+
 export const uid: IdGen = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-3);
 
 const SCENE = /^\s*(?:#+\s*(.+?)|((?:INT|EXT|INT\/EXT)\.\s*.+))\s*$/i;
@@ -43,8 +45,10 @@ export function parseScript(text: string, prevChars: Character[], prevLines: Lin
   const scenes: string[] = [];
   const raw: { speaker: string; hint: string; text: string; scene: number }[] = [];
   let last: (typeof raw)[number] | null = null;
+  const rows = text.replace(/\r\n?/g, "\n").split("\n");
+  const hasSpeaker = rows.some((r) => !SCENE.test(r) && (SPEAKER.exec(r)?.[3] ?? "").trim() !== "" && SPEAKER.test(r));
 
-  for (const row of text.replace(/\r\n?/g, "\n").split("\n")) {
+  for (const row of rows) {
     if (!row.trim()) {
       last = null;
       continue;
@@ -67,6 +71,11 @@ export function parseScript(text: string, prevChars: Character[], prevLines: Lin
       raw.push(last);
     } else if (last) {
       last.text += " " + row.trim();
+    } else if (!hasSpeaker) {
+      // Plain text with no NAME: anywhere is read as one narrator, one paragraph per line.
+      if (scenes.length === 0) scenes.push("Scene 1");
+      last = { speaker: NARRATOR, hint: "", text: row.trim(), scene: scenes.length - 1 };
+      raw.push(last);
     }
   }
   if (scenes.length === 0) scenes.push("Scene 1");

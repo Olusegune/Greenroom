@@ -1,10 +1,12 @@
 import { useApp } from "../ctx";
+import { ENGINES } from "../engines";
 import { ChevronRight } from "../icons";
-import { parseScript, SAMPLE_SCRIPT } from "../script";
+import { NARRATOR, parseScript, SAMPLE_SCRIPT } from "../script";
 import { Empty } from "../ui";
+import { voiceLine } from "../useSample";
 
 export default function Write() {
-  const { project, edit, go } = useApp();
+  const { project, edit, go, library } = useApp();
   if (!project) return null;
 
   const set = (script: string) =>
@@ -14,48 +16,66 @@ export default function Write() {
     });
 
   const used = new Set(project.lines.map((l) => l.characterId));
+  const cast = project.characters.filter((c) => used.has(c.id));
   const counts = new Map<string, number>();
   project.lines.forEach((l) => counts.set(l.characterId, (counts.get(l.characterId) ?? 0) + 1));
+  const onlyNarrator = cast.length === 1 && cast[0]!.name === NARRATOR;
+  const ready = project.lines.length > 0;
+  const voiceless = cast.filter((c) => !library.some((v) => v.id === c.voiceId)).length;
+  const patch = (id: string, voiceId: string) => edit((p) => ({ ...p, characters: p.characters.map((c) => (c.id === id ? { ...c, voiceId: voiceId || undefined } : c)) }));
 
   return (
     <section>
       <div>
         <h1>Script</h1>
         <p className="lede">
-          Write each line as <span className="speaker">NAME: what they say</span>. Add a direction in brackets, like <span className="speaker">ADA (whispering): Keep quiet.</span> Start a new scene with <span className="speaker"># Title</span>. Any language works, and you can mix them in one line.
+          Type what is said. For one voice, just write the words. For a conversation, start each line with the speaker: <span className="speaker">ADA: Hello there.</span> Add a direction in brackets, like <span className="speaker">ADA (whispering): Keep quiet.</span> Start a new scene with <span className="speaker"># Title</span>. Any language works, and you can mix them in one line.
         </p>
       </div>
       <div className="row top" style={{ gap: 24 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <textarea className="script-area" aria-label="Script" spellCheck={false} value={project.script} onChange={(e) => set(e.target.value)} placeholder={"# Scene 1\nADA: Hello there.\nTUNDE (laughing): Hello yourself!"} />
-          <div className="row" style={{ marginTop: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }} className="stack">
+          <textarea className="script-area" aria-label="Script" spellCheck={false} value={project.script} onChange={(e) => set(e.target.value)} placeholder={"Just type a line, or:\n\n# Scene 1\nADA: Hello there.\nTUNDE (laughing): Hello yourself!"} />
+          <div className="row wrap">
             <button className="sm" onClick={() => set(SAMPLE_SCRIPT)} disabled={project.script.trim().length > 0}>
               Insert a sample scene
             </button>
             <span className="muted small">Saved automatically.</span>
+            <span className="spacer" />
+            <button className="primary" disabled={!ready} onClick={() => go(voiceless > 0 ? "cast" : "perform")}>
+              {voiceless > 0 ? "Done, choose voices" : "Done, direct the performance"} <ChevronRight size={16} />
+            </button>
           </div>
         </div>
-        <aside className="card" style={{ width: 280 }} aria-label="What Greenroom found">
+        <aside className="card stack" style={{ width: 300 }} aria-label="What Greenroom found">
           <h3>Found in your script</h3>
-          {project.lines.length === 0 ? (
-            <Empty title="No lines yet">Type a line like ADA: Hello.</Empty>
+          {!ready ? (
+            <Empty title="No lines yet">Type anything. Plain words become one narrator&apos;s lines.</Empty>
           ) : (
-            <div className="stack">
+            <>
               <p className="num">
                 {project.scenes.length} scene{project.scenes.length === 1 ? "" : "s"}, {project.lines.length} line{project.lines.length === 1 ? "" : "s"}
               </p>
-              {project.characters
-                .filter((c) => used.has(c.id))
-                .map((c) => (
-                  <div key={c.id} className="row between">
+              {onlyNarrator && <p className="muted small">No speaker names found, so this is read by one narrator. Start lines with a name and a colon to add characters.</p>}
+              {cast.map((c) => (
+                <label key={c.id} className="field">
+                  <span className="row between">
                     <span className="speaker">{c.name}</span>
-                    <span className="muted small">{counts.get(c.id)} lines</span>
-                  </div>
-                ))}
-              <button className="primary" onClick={() => go("cast")}>
-                Cast the voices <ChevronRight size={16} />
-              </button>
-            </div>
+                    <span className="muted small">{counts.get(c.id)} line{counts.get(c.id) === 1 ? "" : "s"}</span>
+                  </span>
+                  <select value={library.some((v) => v.id === c.voiceId) ? c.voiceId : ""} onChange={(e) => patch(c.id, e.target.value)} aria-label={`Voice for ${c.name}`}>
+                    <option value="">{library.length ? "Choose a voice…" : "No voices yet"}</option>
+                    {library.map((v) => (
+                      <option key={v.provider + v.id} value={v.id}>
+                        {v.name} {voiceLine(v) ? `(${voiceLine(v)})` : ""} · {ENGINES[v.provider].label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+              {library.length === 0 && (
+                <button onClick={() => go("voices")}>Find a voice first</button>
+              )}
+            </>
           )}
         </aside>
       </div>
