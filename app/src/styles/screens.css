@@ -1,0 +1,17 @@
+.script-area { font-family: var(--font-mono); font-size: 15px; min-height: 380px; line-height: 1.8; background: var(--surface-1); }
+.speaker { font-family: var(--font-mono); font-weight: 600; color: var(--accent-text); }
+.linecard { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-card); padding: var(--s4); display: grid; gap: var(--s3); }
+.linecard.playing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-line), 0 0 24px rgba(82, 214, 138, 0.12); }
+.linecard textarea { font-family: var(--font-mono); font-size: 14px; min-height: 58px; background: var(--surface-1); }
+.sent { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--text-3); }
+.sent b { color: var(--accent-text); font-weight: 500; }
+.take { display: flex; align-items: center; gap: var(--s3); padding: var(--s2) var(--s3); border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--surface-1); }
+.take.chosen { border-color: var(--accent); background: var(--accent-wash); }
+.scene-title { font-family: var(--font-display); font-weight: 300; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-2); font-size: var(--fs-sm); margin: var(--s4) 0 0; }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; height: 40px; color: var(--text-2); }
+.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.voice-card { display: grid; gap: var(--s2); }
+.voice-card .meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.lang-note { color: var(--text-2); font-size: var(--fs-sm); }
+.lab-line { margin: 6px 0 2px; font-style: italic; }

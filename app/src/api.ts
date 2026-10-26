@@ -1,21 +1,43 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { KeyName, Provider } from "./lab";
+import type { Project, VoiceEntry, VoiceInfo } from "./types";
+import { mock } from "./mock";
 
-export interface Voice {
-  id: string;
-  name: string;
-}
+export type KeyName = "elevenlabs" | "kie" | "voicekiller" | "voicekiller-userid";
+export type KeyStatus = { elevenlabs: boolean; kie: boolean; voicekiller: boolean };
+export type Provider = "eleven-v4" | "eleven-tts" | "eleven-sfx" | "voicekiller" | "voicekiller-clone" | "kie-tts" | "kie-dialogue" | "kie-sfx";
+
 export interface ClipOut {
   audioB64: string;
   mime: string;
   ms: number;
 }
+export interface Audio {
+  audioB64: string;
+  mime: string;
+}
+export interface ClipReq {
+  provider: Provider;
+  text: string;
+  voice?: string;
+  speed?: number;
+  seconds?: number;
+  instructions?: string;
+}
+export interface DesignPreview {
+  generatedVoiceId: string;
+  audioB64: string;
+  seconds: number;
+}
+export interface ProjectInfo {
+  id: string;
+  name: string;
+  updatedAt: string;
+}
 
-// Outside the desktop app (a plain browser) there is no backend; say so rather than throw an obscure error.
-const inApp = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+/** True inside the Windows app. In a plain browser the demo backend in mock.ts answers instead, so the screens can be viewed. */
+export const inApp = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (!inApp()) throw new Error("Open Greenroom as the Windows app to use this.");
   try {
     return await invoke<T>(cmd, args);
   } catch (e) {
@@ -23,18 +45,37 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
   }
 }
 
-export const api = {
-  keyStatus: () => (inApp() ? invoke<Record<KeyName, boolean>>("key_status") : Promise.resolve({ elevenlabs: false, kie: false })),
+const real = {
+  keyStatus: () => call<KeyStatus>("key_status"),
   setKey: (name: KeyName, value: string) => call<void>("set_key", { name, value }),
   clearKey: (name: KeyName) => call<void>("clear_key", { name }),
-  voices: () => call<Voice[]>("eleven_voices"),
-  runClip: (provider: Provider, text: string, voice?: string) => call<ClipOut>("run_clip", { req: { provider, text, voice } }),
+  runClip: (req: ClipReq) => call<ClipOut>("run_clip", { req }),
+  voicesMine: () => call<VoiceInfo[]>("voices_mine"),
+  voicesVoiceKiller: () => call<{ name: string; language: string }[]>("voices_voicekiller"),
+  voicesShared: (search: string, language: string, accent: string, gender: string, page: number) => call<{ voices: VoiceInfo[]; more: boolean }>("voices_shared", { search, language, accent, gender, page }),
+  voiceAddShared: (owner: string, voice: string, name: string) => call<string>("voice_add_shared", { owner, voice, name }),
+  voiceDesign: (description: string, sample?: string) => call<DesignPreview[]>("voice_design", { description, sample }),
+  voiceDesignSave: (generated: string, name: string, description: string) => call<string>("voice_design_save", { generated, name, description }),
+  voiceClone: (name: string, filename: string, mime: string, audioB64: string, permission: boolean) => call<string>("voice_clone", { name, filename, mime, audioB64, permission }),
+  voiceDelete: (id: string) => call<void>("voice_delete", { id }),
+  previewFetch: (url: string) => call<Audio>("preview_fetch", { url }),
+  projectList: () => call<ProjectInfo[]>("project_list"),
+  projectLoad: async (id: string) => JSON.parse(await call<string>("project_load", { id })) as Project,
+  projectSave: (p: Project) => call<void>("project_save", { id: p.id, json: JSON.stringify(p) }),
+  takeWrite: (project: string, take: string, ext: string, audioB64: string) => call<void>("take_write", { project, take, ext, audioB64 }),
+  takeRead: (project: string, take: string) => call<Audio>("take_read", { project, take }),
+  exportWrite: (project: string, folder: string, filename: string, audioB64: string) => call<string>("export_write", { project, folder, filename, audioB64 }),
+  libraryLoad: async () => JSON.parse(await call<string>("library_load")) as VoiceEntry[],
+  librarySave: (v: VoiceEntry[]) => call<void>("library_save", { json: JSON.stringify(v) }),
   saveReport: (text: string) => call<string>("save_report", { text }),
 };
 
-export function toUrl(c: ClipOut): string {
-  const bin = atob(c.audioB64);
+export type Api = typeof real;
+export const api: Api = inApp() ? real : mock;
+
+export function toUrl(a: Audio): string {
+  const bin = atob(a.audioB64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return URL.createObjectURL(new Blob([bytes], { type: c.mime }));
+  return URL.createObjectURL(new Blob([bytes], { type: a.mime }));
 }

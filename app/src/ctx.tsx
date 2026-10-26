@@ -1,0 +1,180 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { api, type KeyStatus } from "./api";
+import { newProject, type Project, type VoiceEntry } from "./types";
+import { uid } from "./script";
+
+export type Tab = "home" | "write" | "cast" | "perform" | "export" | "voices" | "lab" | "settings";
+
+export interface SpendAsk {
+  title: string;
+  lines: string[];
+  /** When set, the sheet offers "do not ask again this session" for this kind of single action. */
+  skipKey?: string;
+}
+
+interface Ctx {
+  tab: Tab;
+  go: (t: Tab) => void;
+  keys: KeyStatus;
+  refreshKeys: () => void;
+  library: VoiceEntry[];
+  saveLibrary: (next: VoiceEntry[] | ((current: VoiceEntry[]) => VoiceEntry[])) => void;
+  project: Project | null;
+  saving: "idle" | "saving" | "saved" | "error";
+  openProject: (id: string) => Promise<void>;
+  createProject: (name: string) => Promise<void>;
+  closeProject: () => void;
+  edit: (fn: (p: Project) => Project) => void;
+  toast: (text: string, bad?: boolean) => void;
+  confirmSpend: (a: SpendAsk) => Promise<boolean>;
+}
+
+const C = createContext<Ctx | null>(null);
+export const useApp = () => {
+  const c = useContext(C);
+  if (!c) throw new Error("outside provider");
+  return c;
+};
+
+export function Provider({ children }: { children: ReactNode }) {
+  const [tab, setTab] = useState<Tab>("home");
+  const [keys, setKeys] = useState<KeyStatus>({ elevenlabs: false, kie: false, voicekiller: false });
+  const [library, setLibrary] = useState<VoiceEntry[]>([]);
+  const [project, setProject] = useState<Project | null>(null);
+  const [saving, setSaving] = useState<Ctx["saving"]>("idle");
+  const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
+  const [ask, setAsk] = useState<{ a: SpendAsk; done: (ok: boolean) => void } | null>(null);
+  const libRef = useRef<VoiceEntry[]>([]);
+  const skipped = useRef(new Set<string>());
+  const dirty = useRef(false);
+
+  const refreshKeys = useCallback(() => void api.keyStatus().then(setKeys).catch(() => undefined), []);
+  useEffect(refreshKeys, [refreshKeys]);
+  useEffect(() => void api.libraryLoad().then((l) => ((libRef.current = l), setLibrary(l))).catch(() => undefined), []);
+
+  const toast = useCallback((text: string, bad = false) => {
+    setNote({ text, bad });
+    setTimeout(() => setNote((n) => (n?.text === text ? null : n)), bad ? 8000 : 3500);
+  }, []);
+
+  const saveLibrary = useCallback(
+    (next: VoiceEntry[] | ((current: VoiceEntry[]) => VoiceEntry[])) => {
+      // Always work from the latest list, so two quick changes cannot overwrite each other.
+      const v = typeof next === "function" ? next(libRef.current) : next;
+      libRef.current = v;
+      setLibrary(v);
+      api.librarySave(v).catch((e: Error) => toast(e.message, true));
+    },
+    [toast],
+  );
+
+  const edit = useCallback((fn: (p: Project) => Project) => {
+    dirty.current = true;
+    setProject((p) => (p ? { ...fn(p), updatedAt: new Date().toISOString() } : p));
+  }, []);
+
+  // Autosave shortly after the last change. Takes are written the moment they are made, so this only holds the plan.
+  useEffect(() => {
+    if (!project || !dirty.current) return;
+    setSaving("saving");
+    const t = setTimeout(() => {
+      api
+        .projectSave(project)
+        .then(() => (dirty.current = false, setSaving("saved")))
+        .catch((e: Error) => (setSaving("error"), toast("Could not save: " + e.message, true)));
+    }, 600);
+    return () => clearTimeout(t);
+  }, [project, toast]);
+
+  const openProject = useCallback(
+    async (id: string) => {
+      try {
+        const p = await api.projectLoad(id);
+        dirty.current = false;
+        setProject(p);
+        setSaving("idle");
+        setTab("write");
+      } catch (e) {
+        toast((e as Error).message, true);
+      }
+    },
+    [toast],
+  );
+
+  const createProject = useCallback(
+    async (name: string) => {
+      const now = new Date().toISOString();
+      const p = newProject("p-" + uid(), name.trim() || "Untitled project", now);
+      try {
+        await api.projectSave(p);
+        dirty.current = false;
+        setProject(p);
+        setSaving("saved");
+        setTab("write");
+      } catch (e) {
+        toast((e as Error).message, true);
+      }
+    },
+    [toast],
+  );
+
+  const closeProject = useCallback(() => {
+    setProject(null);
+    setTab("home");
+  }, []);
+
+  const confirmSpend = useCallback((a: SpendAsk) => {
+    if (a.skipKey && skipped.current.has(a.skipKey)) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => setAsk({ a, done: resolve }));
+  }, []);
+
+  const value = useMemo<Ctx>(
+    () => ({ tab, go: setTab, keys, refreshKeys, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, toast, confirmSpend }),
+    [tab, keys, refreshKeys, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, toast, confirmSpend],
+  );
+
+  return (
+    <C.Provider value={value}>
+      {children}
+      {note && (
+        <div className={note.bad ? "toast err" : "toast"} role={note.bad ? "alert" : "status"}>
+          {note.text}
+        </div>
+      )}
+      {ask && <SpendSheet ask={ask.a} onDone={(ok, skip) => (skip && ask.a.skipKey && skipped.current.add(ask.a.skipKey), ask.done(ok), setAsk(null))} />}
+    </C.Provider>
+  );
+}
+
+function SpendSheet({ ask, onDone }: { ask: SpendAsk; onDone: (ok: boolean, skip: boolean) => void }) {
+  const [skip, setSkip] = useState(false);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onDone(false, false);
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onDone]);
+  return (
+    <div className="scrim" role="presentation">
+      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="spend-t">
+        <h2 id="spend-t">{ask.title}</h2>
+        <p className="muted">This sends text to the provider and uses credits on your own account. Greenroom cannot see your price, so check your plan if unsure.</p>
+        <ul>
+          {ask.lines.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+        {ask.skipKey && (
+          <label className="row small muted">
+            <input type="checkbox" checked={skip} onChange={(e) => setSkip(e.target.checked)} /> Do not ask again for single items this session
+          </label>
+        )}
+        <div className="row end" style={{ marginTop: 16 }}>
+          <button onClick={() => onDone(false, false)}>Cancel</button>
+          <button className="primary" autoFocus onClick={() => onDone(true, skip)}>
+            Go ahead and use credits
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
