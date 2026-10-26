@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { useApp } from "../ctx";
 import { applySuggestion, describe, isDirected, parseDirector, systemPrompt, userPrompt, type DirectorResult } from "../director";
-import { applyPreset, chosenTake, EMOTIONS, INSERT_GROUPS, insertAt, PRESETS, SOUNDS, toggleIn, vkUnsupported } from "../direct";
+import { applyPreset, chosenTake, EMOTIONS, PRESETS, SOUNDS, toggleIn, vkUnsupported } from "../direct";
+import { VisualLine } from "../VisualLine";
 import { api } from "../api";
 import { ENGINES } from "../engines";
 import { makeSound, makeTake, modelLabel, plan, type Model } from "../generate";
@@ -300,9 +301,8 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
   const { project, confirmSpend, toast } = useApp();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
-  const [menu, setMenu] = useState(false);
+  const [editText, setEditText] = useState(false);
   const [snd, setSnd] = useState({ prompt: "", placement: "after" as "before" | "after", seconds: 2 });
-  const area = useRef<HTMLTextAreaElement>(null);
   const d = line.direction;
   const noTags = !!voice && !ENGINES[voice.provider].tags;
   const ignoresNote = !!voice && !ENGINES[voice.provider].tags && voice.provider !== "voicekiller";
@@ -313,16 +313,6 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
     setBusy(true);
     await make(line, n);
     setBusy(false);
-  };
-
-  const insert = (tag: string) => {
-    const caret = area.current?.selectionStart ?? line.text.length;
-    const r = insertAt(line.text, caret, tag);
-    patch((l) => ({ ...l, text: r.text }));
-    setTimeout(() => {
-      area.current?.focus();
-      area.current?.setSelectionRange(r.caret, r.caret);
-    }, 0);
   };
 
   const addSound = async () => {
@@ -349,10 +339,14 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
         </span>
         {chosen ? <span className="badge ok">{line.takes.length} take{line.takes.length === 1 ? "" : "s"}</span> : <span className="badge">no take yet</span>}
       </div>
-      <textarea ref={area} aria-label={`Line ${index} text`} rows={2} value={line.text} onChange={(e) => patch((l) => ({ ...l, text: e.target.value }))} />
+      {editText ? (
+        <textarea aria-label={`Line ${index} text`} rows={2} value={line.text} onChange={(e) => patch((l) => ({ ...l, text: e.target.value }))} />
+      ) : (
+        <VisualLine label={`Line ${index}: click between words to add a sound`} text={line.text} onChange={(t) => patch((l) => ({ ...l, text: t }))} disabledNote={noTags ? `${ENGINES[voice!.provider].label} cannot make sounds. Pick an ElevenLabs voice, or add a sound clip below.` : undefined} />
+      )}
       <div className="row wrap">
-        <button className="sm" aria-expanded={menu} onClick={() => setMenu(!menu)}>
-          <Plus size={14} /> Insert a sound into the words
+        <button className="sm" aria-pressed={editText} onClick={() => setEditText(!editText)}>
+          {editText ? "Back to the visual editor" : "Edit text"}
         </button>
         <select
           aria-label="Style preset"
@@ -371,26 +365,6 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
         </select>
         <input type="text" aria-label={`Director's note for line ${index}`} placeholder="Director's note: how to say it, in plain words" value={d.note ?? ""} onChange={(e) => patch((l) => ({ ...l, direction: { ...l.direction, note: e.target.value } }))} style={{ flex: 1, minWidth: 220 }} />
       </div>
-      {menu && (
-        <div className="card stack" role="group" aria-label="Insert a sound">
-          {INSERT_GROUPS.map((g) => (
-            <div key={g.title} className="row wrap">
-              <span className="muted small" style={{ width: 110 }}>
-                {g.title}
-              </span>
-              <span className="chips">
-                {g.tags.map((t) => (
-                  <button key={t.tag} className="chip" aria-pressed="false" title={noTags ? `${ENGINES[voice!.provider].label} cannot make this` : t.verified ? "Heard and approved" : "Not yet listened to"} onClick={() => insert(t.tag)}>
-                    {t.tag}
-                    {t.verified ? "" : " ·"}
-                  </button>
-                ))}
-              </span>
-            </div>
-          ))}
-          <p className="muted small">A dot means not yet listened to. The sound goes where your cursor was in the words above.</p>
-        </div>
-      )}
       <div className="chips" role="group" aria-label="How it is said">
         {EMOTIONS.map((e) => (
           <button key={e.tag} className="chip" aria-pressed={d.emotion === e.tag} title={e.verified ? "Heard and approved" : "Not yet listened to"} onClick={() => patch((l) => ({ ...l, direction: { ...l.direction, emotion: l.direction.emotion === e.tag ? "" : e.tag } }))}>

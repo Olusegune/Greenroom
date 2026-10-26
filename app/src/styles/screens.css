@@ -20,3 +20,20 @@
 .tile[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-wash); color: var(--accent-text); }
 .flag { border-radius: 2px; box-shadow: 0 0 0 1px var(--line-strong); flex: none; }
 .flag-ph { display: inline-block; border-radius: 2px; background: var(--surface-4); flex: none; }
+
+/* Visual line editor */
+.vline-wrap { position: relative; }
+.vline { display: flex; flex-wrap: wrap; align-items: center; row-gap: 6px; padding: 10px 12px; background: var(--surface-1); border: 1px solid var(--control-line); border-radius: var(--r-ctl); font-size: 15px; line-height: 1.6; min-height: 52px; }
+.vitem { display: inline-flex; align-items: center; }
+.vword { padding: 0 1px; }
+.vgap { width: 10px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: transparent; justify-content: center; cursor: pointer; transition: width var(--t-fast) var(--ease), background var(--t-fast) var(--ease); overflow: hidden; }
+.vgap.edge { width: 14px; }
+.vgap:hover, .vgap:focus-visible, .vgap.on, .vgap.drop { width: 26px; background: var(--accent-wash); color: var(--accent-text); border: 1px solid var(--accent-line); }
+.vgap.drop { background: var(--accent); color: var(--on-accent); }
+.vline:hover .vgap { color: var(--text-3); }
+.vline:hover .vgap:hover, .vline:hover .vgap.on { color: var(--accent-text); }
+.vtag { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 4px 0 10px; border-radius: 99px; font-size: 13px; color: var(--tag); border: 1px solid var(--tag); background: color-mix(in srgb, var(--tag) 12%, transparent); cursor: grab; user-select: none; white-space: nowrap; }
+.vtag.dragging { opacity: 0.4; }
+.vx { width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; justify-content: center; opacity: 0.7; }
+.vx:hover:not(:disabled) { background: color-mix(in srgb, var(--tag) 30%, transparent); opacity: 1; }
+.vpicker { position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 6px); display: grid; gap: 10px; box-shadow: var(--shadow-2); }

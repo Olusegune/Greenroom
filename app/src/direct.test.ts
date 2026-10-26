@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyPreset, applyPronunciations, cleanNote, composeText, countChars, INSERT_GROUPS, insertAt, PRESETS, stripTags, toggleIn, vkInstructions, vkUnsupported } from "./direct";
+import { applyPreset, applyPronunciations, cleanNote, composeText, countChars, INSERT_GROUPS, insertAt, insertTok, joinTokens, moveTok, PRESETS, removeTok, stripTags, tagGroup, toggleIn, tokenize, vkInstructions, vkUnsupported } from "./direct";
 import { DEFAULT_DIRECTION } from "./types";
 
 const line = (text: string, d: Partial<typeof DEFAULT_DIRECTION> = {}) => ({ text, direction: { ...DEFAULT_DIRECTION, ...d } });
@@ -87,5 +87,40 @@ describe("pronunciations", () => {
   });
   it("treat special characters and dollar signs literally", () => {
     expect(applyPronunciations("Pay $5 (now)", [{ from: "$5", to: "five dollars" }, { from: "(now)", to: "$& now" }])).toBe("Pay five dollars $& now");
+  });
+});
+
+describe("visual line editor", () => {
+  it("splits words and tags and joins them back with single spaces", () => {
+    const t = tokenize("Hello [laughs]   there.  [sighs]");
+    expect(t).toEqual([{ kind: "word", text: "Hello" }, { kind: "tag", text: "laughs" }, { kind: "word", text: "there." }, { kind: "tag", text: "sighs" }]);
+    expect(joinTokens(t)).toBe("Hello [laughs] there. [sighs]");
+  });
+  it("survives stray brackets, empty tags and tags with spaces", () => {
+    expect(joinTokens(tokenize("a [ b [] [out of breath] c"))).toBe("a [ b [out of breath] c");
+    expect(tokenize("")).toEqual([]);
+  });
+  it("inserts a sound at any gap, including both ends", () => {
+    const t = tokenize("one two");
+    expect(joinTokens(insertTok(t, 0, "gasps"))).toBe("[gasps] one two");
+    expect(joinTokens(insertTok(t, 1, "sighs"))).toBe("one [sighs] two");
+    expect(joinTokens(insertTok(t, 2, "laughs"))).toBe("one two [laughs]");
+    expect(joinTokens(insertTok(t, 99, "x"))).toBe("one two [x]");
+    expect(joinTokens(insertTok(t, 1, "  [  ]  "))).toBe("one two");
+  });
+  it("moves a sound to another gap and removes one", () => {
+    const t = tokenize("[gasps] one two [sighs]");
+    expect(joinTokens(moveTok(t, 0, 3))).toBe("one two [gasps] [sighs]");
+    expect(joinTokens(moveTok(t, 3, 0))).toBe("[sighs] [gasps] one two");
+    expect(moveTok(t, 0, 1)).toBe(t);
+    expect(moveTok(t, 0, 0)).toBe(t);
+    expect(joinTokens(removeTok(t, 0))).toBe("one two [sighs]");
+  });
+  it("groups tags for colour", () => {
+    expect(tagGroup("laughs")).toBe("Reactions");
+    expect(tagGroup("grunts")).toBe("Effort and body");
+    expect(tagGroup("whispers")).toBe("Voice");
+    expect(tagGroup("short pause")).toBe("Beats");
+    expect(tagGroup("as if lifting")).toBe("Other");
   });
 });

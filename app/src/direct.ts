@@ -189,3 +189,56 @@ export function applyPronunciations(text: string, dict: { from: string; to: stri
     })
     .join("");
 }
+
+// ---- Visual line editor: words and [sound] pills, so sounds can be placed by clicking between words ----
+
+export interface Tok {
+  kind: "word" | "tag";
+  text: string;
+}
+
+/** Split a line into words and [tags]. Whitespace is not kept: tokens are joined with single spaces. */
+export function tokenize(text: string): Tok[] {
+  const out: Tok[] = [];
+  for (const m of text.matchAll(/\[[^\][]*\]|[^\s[]+|\[/g)) {
+    const s = m[0];
+    if (s.length > 1 && s.startsWith("[") && s.endsWith("]")) {
+      const inner = s.slice(1, -1).trim();
+      if (inner) out.push({ kind: "tag", text: inner });
+    } else out.push({ kind: "word", text: s });
+  }
+  return out;
+}
+
+export function joinTokens(t: Tok[]): string {
+  return t.map((x) => (x.kind === "tag" ? `[${x.text}]` : x.text)).join(" ");
+}
+
+/** `gap` is a position between tokens: 0 is before the first, t.length is after the last. */
+export function insertTok(t: Tok[], gap: number, tagText: string): Tok[] {
+  const g = Math.max(0, Math.min(gap, t.length));
+  const clean = tagText.replace(/[[\]\r\n]+/g, " ").trim();
+  if (!clean) return t;
+  return [...t.slice(0, g), { kind: "tag", text: clean }, ...t.slice(g)];
+}
+
+export function removeTok(t: Tok[], i: number): Tok[] {
+  return t.filter((_, j) => j !== i);
+}
+
+/** Move the token at `from` to a gap, numbered against the list as it is before the move. */
+export function moveTok(t: Tok[], from: number, gap: number): Tok[] {
+  if (from < 0 || from >= t.length || gap === from || gap === from + 1) return t;
+  const item = t[from]!;
+  const rest = removeTok(t, from);
+  const at = gap > from ? gap - 1 : gap;
+  return [...rest.slice(0, at), item, ...rest.slice(at)];
+}
+
+export type TagGroup = "Reactions" | "Effort and body" | "Voice" | "Beats" | "Other";
+
+export function tagGroup(tag: string): TagGroup {
+  const t = tag.trim().toLowerCase();
+  for (const g of INSERT_GROUPS) if (g.tags.some((c) => c.tag === t)) return g.title as TagGroup;
+  return "Other";
+}
