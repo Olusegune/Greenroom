@@ -225,6 +225,7 @@ function Find() {
   const { keys, toast, library, confirmSpend } = useApp();
   const add = useAdd();
   const [tile, setTile] = useState<Tile | null>(null);
+  const [changing, setChanging] = useState(false);
   const [filter, setFilter] = useState("");
   const [gender, setGender] = useState("");
   const [accent, setAccent] = useState("");
@@ -348,13 +349,27 @@ function Find() {
         </div>
       </div>
 
-      <div className="tiles" role="group" aria-label="Languages">
-        <button className="tile" aria-pressed={tile === null} onClick={() => setTile(null)}>
+      {tile && !changing && (
+        <div className="row wrap lang-bar">
+          <span className="row">
+            <Flag cc={tile.cc} />
+            <strong>{tile.name}</strong>
+          </span>
+          <button className="sm" onClick={() => setChanging(true)}>
+            Change language
+          </button>
+          <button className="sm ghost" onClick={() => setTile(null)}>
+            Show popular instead
+          </button>
+        </div>
+      )}
+      <div className="tiles" role="group" aria-label="Languages" hidden={!!tile && !changing}>
+        <button className="tile" aria-pressed={tile === null} onClick={() => (setTile(null), setChanging(false))}>
           <span className="flag-ph" style={{ width: 22, height: 16 }} aria-hidden="true" />
           Popular
         </button>
         {tiles.map((t) => (
-          <button key={t.id} className="tile" aria-pressed={tile?.id === t.id} onClick={() => setTile(t)}>
+          <button key={t.id} className="tile" aria-pressed={tile?.id === t.id} onClick={() => (setTile(t), setChanging(false))}>
             <Flag cc={t.cc} />
             {t.name}
           </button>
@@ -381,15 +396,23 @@ function Find() {
             {s.state === "done" && s.items.length === 0 && <p className="muted">No voices matched here. Try fewer filters.</p>}
             <div className="grid">
               {s.items.slice(0, expanded[e] ? s.items.length : 24).map((f) => (
-                <div key={f.engine + f.id} className="card voice-card">
-                  <h2>{f.name}</h2>
-                  <div className="meta">
+                <div key={f.engine + f.id} className="card voice-card vc">
+                  <div className="vc-top">
+                    <span className="vc-face">
+                      <Avatar seed={f.id + f.name} gender={f.gender} size={72} />
+                      {f.engine !== "piper" && <PlayButton round label={`Hear ${shortName(f.name)}`} get={hear(f)} disabled={!f.previewUrl && f.engine === "elevenlabs"} />}
+                    </span>
+                    <div className="vc-id">
+                      <h2 title={f.name}>{shortName(f.name)}</h2>
+                      <p className="vc-tag">{f.name.split(/\s+[-–—:|]\s+/).slice(1).join(" · ").trim() || f.description || "No description"}</p>
+                    </div>
+                  </div>
+                  <div className="vc-chips">
                     <span className="badge">{[languageName(f.language.split(/[-_]/)[0] ?? f.language), f.accent, f.gender].filter(Boolean).join(" · ") || f.language}</span>
                     {f.sizeMb ? <span className="badge">{f.sizeMb} MB</span> : null}
+                    {f.engine === "piper" && <span className="badge">Hear it after adding</span>}
                   </div>
-                  {f.description && <p className="muted small">{f.description}</p>}
                   <div className="row">
-                    {f.engine === "piper" ? <span className="muted small">Hear it after adding</span> : <PlayButton label="Hear it" get={hear(f)} disabled={!f.previewUrl && f.engine === "elevenlabs"} />}
                     <span className="spacer" />
                     <button className="sm primary" disabled={inLib(f) || busyKey === f.engine + f.id} onClick={() => void take(f)}>
                       {inLib(f) ? "In library" : busyKey === f.engine + f.id ? "Adding…" : (<><Plus size={14} /> {f.engine === "piper" ? "Download" : "Add"}</>)}

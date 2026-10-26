@@ -507,8 +507,10 @@ export default function Timeline() {
         </div>
       )}
 
-      <div className="card stack">
-        <h2>Ducking: music dips under dialogue</h2>
+      <details className="card stack fold">
+        <summary>
+          <strong>Ducking</strong> <span className="muted small">{mix.duck ? `music dips ${Math.abs(mix.amountDb)} dB under dialogue` : "off"}</span>
+        </summary>
         <div className="row wrap">
           <label className="row">
             <input type="checkbox" checked={mix.duck} onChange={(e) => setMix({ duck: e.target.checked })} /> Dip music while someone speaks
@@ -540,7 +542,7 @@ export default function Timeline() {
           </label>
         </div>
         <p className="muted small">The dip is worked out from where the lines are, so it follows them when you move them. It applies to music clips set to dip, and to the atmosphere if you tick it. Exports and stems include it.</p>
-      </div>
+      </details>
     </section>
   );
 }

@@ -143,3 +143,25 @@ export function Avatar({ seed, gender, size = 64, label }: { seed: string; gende
     </svg>
   );
 }
+
+/** Abstract cover art for a project: a gradient and a waveform drawn from its name. Not tied to any content. */
+export function Cover({ seed, size = 56 }: { seed: string; size?: number }) {
+  const h = hash(seed);
+  const [a, b] = BG[h % BG.length]!;
+  const bars = Array.from({ length: 9 }, (_, i) => 0.25 + (((h >>> (i * 3)) & 7) / 7) * 0.75);
+  const id = "cv" + h.toString(36);
+  return (
+    <svg className="cover" width={size} height={size} viewBox="0 0 56 56" aria-hidden="true">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor={a} />
+          <stop offset="1" stopColor={b} />
+        </linearGradient>
+      </defs>
+      <rect width="56" height="56" rx="14" fill={`url(#${id})`} />
+      {bars.map((v, i) => (
+        <rect key={i} x={7 + i * 5} y={28 - v * 17} width="3" height={v * 34} rx="1.5" fill="#fff" fillOpacity={0.55 + v * 0.35} />
+      ))}
+    </svg>
+  );
+}

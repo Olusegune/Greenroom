@@ -157,7 +157,7 @@ export default function Perform() {
         </div>
         <div className="stack" style={{ minWidth: 220 }}>
           <label className="field">
-            ElevenLabs model (for ElevenLabs voices; each line picks its own engine below)
+            ElevenLabs model
             <select value={model} onChange={(e) => setModel(e.target.value as Model)}>
               <option value="eleven_v4">Eleven v4 (newest, best)</option>
               <option value="eleven_v3">Eleven v3</option>
@@ -314,12 +314,14 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [editText, setEditText] = useState(false);
+  const [dirOpen, setDirOpen] = useState(false);
   const [snd, setSnd] = useState({ prompt: "", placement: "after" as "before" | "after", seconds: 2 });
   const d = line.direction;
   const noTags = !!voice && !ENGINES[voice.provider].tags;
   const ignoresNote = !!voice && !ENGINES[voice.provider].tags && voice.provider !== "voicekiller";
   const sent = voice ? plan(line, voice, model, dict).text : line.text;
   const chosen = chosenTake(line);
+  const summary = [d.emotion ? (EMOTIONS.find((e) => e.tag === d.emotion)?.label ?? d.emotion) : "", ...d.sounds.map((t) => SOUNDS.find((x) => x.tag === t)?.label ?? t), (d.note ?? "").trim() ? "note" : "", Math.abs(d.speed - 1) > 0.001 ? `${d.speed.toFixed(2)}×` : ""].filter(Boolean);
 
   const go = async (n: number) => {
     setBusy(true);
@@ -380,10 +382,22 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
       ) : (
         <VisualLine label={`Line ${index}: click between words to add a sound`} text={line.text} onChange={(t) => patch((l) => ({ ...l, text: t }))} disabledNote={noTags ? `${ENGINES[voice!.provider].label} cannot make sounds. Pick an ElevenLabs voice, or add a sound clip below.` : undefined} />
       )}
-      <div className="row wrap">
+      <div className="row wrap linetools">
         <button className="sm" aria-pressed={editText} onClick={() => setEditText(!editText)}>
           {editText ? "Back to the visual editor" : "Edit text"}
         </button>
+        <button className="sm" aria-expanded={dirOpen} onClick={() => setDirOpen(!dirOpen)}>
+          {dirOpen ? "Hide direction" : "Direct this line"}
+        </button>
+        {!dirOpen && summary.map((x) => (
+          <span key={x} className="badge accent">
+            {x}
+          </span>
+        ))}
+      </div>
+      {dirOpen && (
+        <div className="direction stack">
+          <div className="row wrap">
         <select
           aria-label="Style preset"
           value=""
@@ -400,7 +414,8 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
           ))}
         </select>
         <input type="text" aria-label={`Director's note for line ${index}`} placeholder="Director's note: how to say it, in plain words" value={d.note ?? ""} onChange={(e) => patch((l) => ({ ...l, direction: { ...l.direction, note: e.target.value } }))} style={{ flex: 1, minWidth: 220 }} />
-      </div>
+                </div>
+          <h3>How it is said</h3>
       <div className="chips" role="group" aria-label="How it is said">
         {EMOTIONS.map((e) => (
           <button key={e.tag} className="chip" aria-pressed={d.emotion === e.tag} title={e.verified ? "Heard and approved" : "Not yet listened to"} onClick={() => patch((l) => ({ ...l, direction: { ...l.direction, emotion: l.direction.emotion === e.tag ? "" : e.tag } }))}>
@@ -413,6 +428,7 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
           </button>
         )}
       </div>
+          <h3>Sounds in the line</h3>
       <div className="chips" role="group" aria-label="Sounds in the line">
         {SOUNDS.map((s) => (
           <button key={s.tag} className="chip" aria-pressed={d.sounds.includes(s.tag)} title={noTags ? `${ENGINES[voice!.provider].label} cannot make this` : s.verified ? "Heard and approved" : "Not yet listened to"} onClick={() => patch((l) => ({ ...l, direction: { ...l.direction, sounds: toggleIn(l.direction.sounds, s.tag) } }))}>
@@ -442,6 +458,8 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
       <p className="sent" aria-label="What is sent">
         Sent as: <b>{sent}</b>
       </p>
+        </div>
+      )}
       {line.takes.map((t, i) => (
         <div key={t.id} className="stack" style={{ gap: 4 }}>
         <div className={t.id === chosen?.id ? "take chosen" : "take"}>

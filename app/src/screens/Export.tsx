@@ -412,14 +412,26 @@ export default function Export() {
         {check("scenes", "One file for each scene")}
         {check("stems", "Stems: a track for each character, sound clips and atmosphere", "All the same length, so they line up and add back to the mix.")}
         {check("lines", "Every line as its own original file, in a folder for each character", "Untouched takes, without level or loudness changes.")}
-        <h3 style={{ marginTop: 8 }}>For other software</h3>
+        <details className="fold">
+          <summary>
+            <strong>For other software</strong> <span className="muted small">markers, label track, cue sheet, editor timeline</span>
+          </summary>
+          <div className="stack" style={{ marginTop: 10 }}>
         {check("markersInWav", "Markers inside the WAV files", "One at the start of each line. Shown by Audition, Reaper, Pro Tools and most editors.")}
         {check("labels", "A label track (.txt)", "Imports into Audacity and Reaper.")}
         {check("cueSheet", "A cue sheet (.csv)", "Every line with its timecode, voice, model and text.")}
         {check("otio", "A timeline for editors (.otio)", "A track for each stem with clips at their exact times, plus the video if you added one. Includes the original files it points to.")}
-        <h3 style={{ marginTop: 8 }}>For producers and legal</h3>
+          </div>
+        </details>
+        <details className="fold">
+          <summary>
+            <strong>For producers and legal</strong> <span className="muted small">report, rights register, integrity manifest</span>
+          </summary>
+          <div className="stack" style={{ marginTop: 10 }}>
         {check("report", "Production report and rights register", "AI disclosure, voices and consent, estimated cost, every take with its fingerprint.")}
         {check("manifest", "Integrity manifest", "The SHA-256 of every file saved, so a changed file can be spotted later.")}
+          </div>
+        </details>
         {cfg.otio || cfg.cueSheet ? (
           <label className="field" style={{ maxWidth: 220 }}>
             Frame rate for timecode

@@ -1,3 +1,4 @@
+import { Avatar } from "../avatar";
 import { useApp } from "../ctx";
 import { ENGINES } from "../engines";
 import { ChevronRight } from "../icons";
@@ -28,9 +29,12 @@ export default function Write() {
     <section>
       <div>
         <h1>Script</h1>
-        <p className="lede">
-          Type what is said. For one voice, just write the words. For a conversation, start each line with the speaker: <span className="speaker">ADA: Hello there.</span> Add a direction in brackets, like <span className="speaker">ADA (whispering): Keep quiet.</span> Start a new scene with <span className="speaker"># Title</span>. Any language works, and you can mix them in one line.
-        </p>
+        <p className="lede">Type what is said, in any language. For one voice, just write the words. For a conversation, start each line with the speaker.</p>
+        <div className="chips" aria-label="Ways to write a line">
+          <span className="syntax"><code>ADA: Hello there.</code> a speaker</span>
+          <span className="syntax"><code>ADA (whispering): Keep quiet.</code> a direction</span>
+          <span className="syntax"><code># Title</code> a new scene</span>
+        </div>
       </div>
       <div className="row top" style={{ gap: 24 }}>
         <div style={{ flex: 1, minWidth: 0 }} className="stack">
@@ -59,7 +63,10 @@ export default function Write() {
               {cast.map((c) => (
                 <label key={c.id} className="field">
                   <span className="row between">
-                    <span className="speaker">{c.name}</span>
+                    <span className="row">
+                      <Avatar seed={(library.find((v) => v.id === c.voiceId)?.id ?? c.id) + (library.find((v) => v.id === c.voiceId)?.name ?? c.name)} gender={library.find((v) => v.id === c.voiceId)?.gender} size={34} />
+                      <span className="speaker">{c.name}</span>
+                    </span>
                     <span className="muted small">{counts.get(c.id)} line{counts.get(c.id) === 1 ? "" : "s"}</span>
                   </span>
                   <select value={library.some((v) => v.id === c.voiceId) ? c.voiceId : ""} onChange={(e) => patch(c.id, e.target.value)} aria-label={`Voice for ${c.name}`}>
