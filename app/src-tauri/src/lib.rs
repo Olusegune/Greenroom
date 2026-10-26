@@ -105,6 +105,7 @@ struct ClipReq {
     speed: Option<f64>,
     seconds: Option<f64>,
     instructions: Option<String>,
+    quality: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -122,9 +123,9 @@ fn make_clip(root: &std::path::Path, req: ClipReq) -> Result<Vec<u8>, String> {
     }
     let voice = req.voice.clone().unwrap_or_default();
     match req.provider.as_str() {
-        "eleven-v4" => eleven()?.speech(&voice, eleven::MODEL_V4, text, req.speed),
-        "eleven-tts" => eleven()?.speech(&voice, eleven::MODEL_V3, text, req.speed),
-        "eleven-sfx" => eleven()?.sound(text, req.seconds.unwrap_or(3.0)),
+        "eleven-v4" => eleven()?.speech(&voice, eleven::MODEL_V4, text, req.speed, eleven::format_or_standard(req.quality.as_deref())),
+        "eleven-tts" => eleven()?.speech(&voice, eleven::MODEL_V3, text, req.speed, eleven::format_or_standard(req.quality.as_deref())),
+        "eleven-sfx" => eleven()?.sound(text, req.seconds.unwrap_or(3.0), eleven::format_or_standard(req.quality.as_deref())),
         "piper" => local::piper_speak(root, &voice, text, req.speed.unwrap_or(1.0), &local::RealRunner),
         "local" => local::server_speak(&server_cfg(root), text, &voice, req.speed.unwrap_or(1.0)),
         p @ ("voicekiller" | "voicekiller-clone") => voicekiller_client()?.speak(text, &voice, req.instructions.as_deref(), p == "voicekiller-clone"),

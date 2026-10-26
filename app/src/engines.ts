@@ -40,12 +40,25 @@ export function providerFor(engine: Engine, model: ElevenModel, vkClone = false)
   }
 }
 
+export type Quality = "standard" | "high" | "wav44" | "wav48";
+
+/** Audio quality asked of ElevenLabs. Higher qualities need a higher ElevenLabs plan (docs, 2026-10-26). */
+export const QUALITIES: { id: Quality; label: string; format: string; note: string }[] = [
+  { id: "standard", label: "Standard: MP3 128 kbps", format: "mp3_44100_128", note: "Works on every plan." },
+  { id: "high", label: "High: MP3 192 kbps", format: "mp3_44100_192", note: "Needs the Creator plan or above." },
+  { id: "wav44", label: "Lossless: WAV 44.1 kHz", format: "wav_44100", note: "Needs the Pro plan or above. Best for pro work." },
+  { id: "wav48", label: "Lossless: WAV 48 kHz", format: "wav_48000", note: "The plan needed is not stated by ElevenLabs. If it fails, go back to Standard." },
+];
+
+export const qualityFormat = (q: Quality | undefined): string => QUALITIES.find((x) => x.id === q)?.format ?? "mp3_44100_128";
+
 export interface EnginesCfg {
   elevenModel: ElevenModel;
+  quality: Quality;
   localServer: { url: string; model: string };
 }
 
-export const DEFAULT_ENGINES_CFG: EnginesCfg = { elevenModel: "eleven_v4", localServer: { url: "http://127.0.0.1:8880", model: "kokoro" } };
+export const DEFAULT_ENGINES_CFG: EnginesCfg = { elevenModel: "eleven_v4", quality: "standard", localServer: { url: "http://127.0.0.1:8880", model: "kokoro" } };
 
 /** Kie's preset voices for ElevenLabs Turbo 2.5 (from Kie's docs, 2026-10-26). Names repeat, so the id is what counts. */
 export const KIE_VOICES: { id: string; name: string; style: string }[] = [

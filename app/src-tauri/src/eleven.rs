@@ -10,6 +10,22 @@ use serde_json::{json, Value};
 pub const BASE: &str = "https://api.elevenlabs.io";
 pub const MODEL_V4: &str = "eleven_v4";
 pub const MODEL_V3: &str = "eleven_v3";
+/// Output formats Greenroom will request. 192 kbps MP3 needs the Creator plan and 44.1 kHz WAV the Pro plan
+/// (ElevenLabs docs, 2026-10-26); the plan for 48 kHz WAV is not stated.
+pub const FORMATS: [&str; 4] = ["mp3_44100_128", "mp3_44100_192", "wav_44100", "wav_48000"];
+pub const STANDARD_FORMAT: &str = "mp3_44100_128";
+
+pub fn format_or_standard(f: Option<&str>) -> &'static str {
+    FORMATS.iter().copied().find(|x| Some(*x) == f).unwrap_or(STANDARD_FORMAT)
+}
+
+fn quality_hint(msg: String, format: &str) -> String {
+    if format == STANDARD_FORMAT {
+        msg
+    } else {
+        format!("{msg} The audio quality is set to {format}, which your ElevenLabs plan may not include. You can change it on the Engines page.")
+    }
+}
 
 pub struct Client {
     base: String,
@@ -68,7 +84,8 @@ impl Client {
         finish(self.agent.post(&format!("{}{path}", self.base)).set("xi-api-key", &self.key).set("content-type", "application/json").send_string(&body.to_string()))
     }
 
-    pub fn speech(&self, voice: &str, model: &str, text: &str, speed: Option<f64>) -> Result<Vec<u8>, String> {
+    pub fn speech(&self, voice: &str, model: &str, text: &str, speed: Option<f64>, format: &str) -> Result<Vec<u8>, String> {
+        let format = format_or_standard(Some(format));
         if !valid_id(voice) {
             return Err("Pick a voice first.".into());
         }
@@ -76,11 +93,12 @@ impl Client {
         if let Some(sp) = speed.filter(|x| (x - 1.0).abs() > 0.001) {
             body["voice_settings"] = json!({ "speed": sp.clamp(0.7, 1.2) });
         }
-        read_all(self.post(&format!("/v1/text-to-speech/{voice}?output_format=mp3_44100_128"), &body)?, MAX_AUDIO)
+        read_all(self.post(&format!("/v1/text-to-speech/{voice}?output_format={format}"), &body).map_err(|m| quality_hint(m, format))?, MAX_AUDIO)
     }
 
-    pub fn sound(&self, text: &str, seconds: f64) -> Result<Vec<u8>, String> {
-        read_all(self.post("/v1/sound-generation?output_format=mp3_44100_128", &json!({ "text": text, "duration_seconds": seconds.clamp(0.5, 22.0) }))?, MAX_AUDIO)
+    pub fn sound(&self, text: &str, seconds: f64, format: &str) -> Result<Vec<u8>, String> {
+        let format = format_or_standard(Some(format));
+        read_all(self.post(&format!("/v1/sound-generation?output_format={format}"), &json!({ "text": text, "duration_seconds": seconds.clamp(0.5, 22.0) })).map_err(|m| quality_hint(m, format))?, MAX_AUDIO)
     }
 
     pub fn my_voices(&self) -> Result<Vec<VoiceInfo>, String> {
@@ -314,7 +332,7 @@ mod tests {
     fn speech_uses_the_requested_model_key_and_speed() {
         let f = start(Box::new(|_| (200, audio())));
         let c = Client::new(&f.base, "KEY123");
-        let out = c.speech("Voice1", MODEL_V4, "[laughs] hi", Some(0.9)).unwrap();
+        let out = c.speech("Voice1", MODEL_V4, "[laughs] hi", Some(0.9), STANDARD_FORMAT).unwrap();
         assert_eq!(out.len(), 403);
         let h = f.hits.lock().unwrap()[0].clone();
         assert!(h.path.starts_with("/v1/text-to-speech/Voice1?"));
@@ -326,13 +344,30 @@ mod tests {
     }
 
     #[test]
+    fn audio_quality_is_an_allow_list_and_failures_explain_the_plan() {
+        assert_eq!(format_or_standard(Some("wav_48000")), "wav_48000");
+        assert_eq!(format_or_standard(Some("pcm_44100;rm -rf")), STANDARD_FORMAT);
+        assert_eq!(format_or_standard(None), STANDARD_FORMAT);
+        let f = start(Box::new(|h| if h.path.contains("wav_48000") { (402, br#"{"detail":{"message":"needs a higher tier"}}"#.to_vec()) } else { (200, vec![b'I', b'D', b'3', 1, 2, 3]) }));
+        let c = Client::new(&f.base, "K");
+        let e = c.speech("V1", MODEL_V4, "x", None, "wav_48000").unwrap_err();
+        assert!(e.contains("may not include") && e.contains("Engines page"));
+        assert!(c.speech("V1", MODEL_V4, "x", None, "../bad").is_ok());
+        let hits = f.hits.lock().unwrap().clone();
+        assert!(hits[0].path.contains("output_format=wav_48000"));
+        assert!(hits[1].path.contains("output_format=mp3_44100_128"));
+        assert!(c.sound("rain", 3.0, "mp3_44100_192").is_ok());
+        assert!(f.hits.lock().unwrap().last().unwrap().path.contains("output_format=mp3_44100_192"));
+    }
+
+    #[test]
     fn normal_speed_sends_no_voice_settings_and_bad_voice_ids_never_leave() {
         let f = start(Box::new(|_| (200, audio())));
         let c = Client::new(&f.base, "K");
-        c.speech("V1", MODEL_V3, "x", Some(1.0)).unwrap();
+        c.speech("V1", MODEL_V3, "x", Some(1.0), STANDARD_FORMAT).unwrap();
         let b: Value = serde_json::from_slice(&f.hits.lock().unwrap()[0].body).unwrap();
         assert!(b.get("voice_settings").is_none());
-        assert!(c.speech("../etc", MODEL_V3, "x", None).is_err());
+        assert!(c.speech("../etc", MODEL_V3, "x", None, STANDARD_FORMAT).is_err());
         assert_eq!(f.hits.lock().unwrap().len(), 1);
     }
 
@@ -340,9 +375,9 @@ mod tests {
     fn maps_http_errors_to_plain_messages() {
         let f = start(Box::new(|h| if h.path.contains("A401") { (401, br#"{"detail":{"message":"bad key"}}"#.to_vec()) } else { (402, b"{}".to_vec()) }));
         let c = Client::new(&f.base, "K");
-        let e = c.speech("A401", MODEL_V4, "x", None).unwrap_err();
+        let e = c.speech("A401", MODEL_V4, "x", None, STANDARD_FORMAT).unwrap_err();
         assert!(e.contains("did not accept the key") && e.contains("bad key"));
-        assert!(c.speech("B", MODEL_V4, "x", None).unwrap_err().contains("out of credit"));
+        assert!(c.speech("B", MODEL_V4, "x", None, STANDARD_FORMAT).unwrap_err().contains("out of credit"));
     }
 
     #[test]

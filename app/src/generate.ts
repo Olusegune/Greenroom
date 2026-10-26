@@ -18,9 +18,9 @@ export function plan(line: Line, voice: VoiceEntry, model: Model, dict: Pronunci
   return { provider, text: applyPronunciations(stripTags(line.text), dict), instructions, model: e as Take["model"] };
 }
 
-export async function makeTake(projectId: string, line: Line, voice: VoiceEntry, model: Model, dict: Pronunciation[] = []): Promise<Take> {
+export async function makeTake(projectId: string, line: Line, voice: VoiceEntry, model: Model, dict: Pronunciation[] = [], quality?: string): Promise<Take> {
   const p = plan(line, voice, model, dict);
-  const out = await api.runClip({ provider: p.provider, text: p.text, voice: voice.id, speed: line.direction.speed, instructions: p.instructions });
+  const out = await api.runClip({ provider: p.provider, text: p.text, voice: voice.id, speed: line.direction.speed, instructions: p.instructions, quality });
   const id = "t-" + uid();
   const ext = out.mime === "audio/wav" ? "wav" : "mp3";
   await api.takeWrite(projectId, id, ext, out.audioB64);
@@ -29,8 +29,8 @@ export async function makeTake(projectId: string, line: Line, voice: VoiceEntry,
 }
 
 /** A sound clip (laugh, sneeze, door) made by the sound-effects model, kept like any other take. */
-export async function makeSound(projectId: string, prompt: string, seconds: number) {
-  const out = await api.runClip({ provider: "eleven-sfx", text: prompt, seconds });
+export async function makeSound(projectId: string, prompt: string, seconds: number, quality?: string) {
+  const out = await api.runClip({ provider: "eleven-sfx", text: prompt, seconds, quality });
   const id = "s-" + uid();
   const ext = out.mime === "audio/wav" ? "wav" : "mp3";
   await api.takeWrite(projectId, id, ext, out.audioB64);

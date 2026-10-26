@@ -9,8 +9,9 @@ export function audioPlan(p: Project, scene?: number): Plan {
 }
 
 export async function mixToWav(p: Project, plan: Plan): Promise<ArrayBuffer> {
-  const channels = await renderPlan(plan, p.bed.volume, (ref) => takeBuffer(p.id, ref.id));
-  return encodeWav(channels, 44100);
+  const rate = 48000;
+  const channels = await renderPlan(plan, p.bed.volume, (ref) => takeBuffer(p.id, ref.id), rate);
+  return encodeWav(channels, rate);
 }
 
 export async function previewScene(p: Project, done: () => void, scene?: number): Promise<void> {

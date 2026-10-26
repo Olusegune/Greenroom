@@ -23,6 +23,8 @@ export interface ClipReq {
   speed?: number;
   seconds?: number;
   instructions?: string;
+  /** An ElevenLabs output format, checked against an allow-list in the backend. */
+  quality?: string;
 }
 export interface DesignPreview {
   generatedVoiceId: string;

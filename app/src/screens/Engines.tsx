@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type PiperStatus } from "../api";
 import { useApp } from "../ctx";
-import { ENGINES, type ElevenModel } from "../engines";
+import { ENGINES, QUALITIES, type ElevenModel, type Quality } from "../engines";
 import { Note, useBusy } from "../ui";
 
 export default function Engines() {
@@ -26,6 +26,17 @@ export default function Engines() {
             <option value="eleven_v3">Eleven v3</option>
           </select>
         </label>
+        <label className="field" style={{ maxWidth: 420 }}>
+          Audio quality
+          <select value={engines.quality ?? "standard"} onChange={(e) => saveEngines({ ...engines, quality: e.target.value as Quality })}>
+            {QUALITIES.map((q) => (
+              <option key={q.id} value={q.id}>
+                {q.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="muted small">{QUALITIES.find((q) => q.id === (engines.quality ?? "standard"))?.note} Lossless sources keep a 24-bit export clean; an MP3 source cannot gain detail it does not have.</p>
         {!keys.elevenlabs && (
           <div>
             <button onClick={() => go("settings")}>Add the key in Settings</button>

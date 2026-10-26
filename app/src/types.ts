@@ -34,6 +34,8 @@ export interface Direction {
   sounds: string[];
   speed: number;
   pauseAfter: number;
+  /** Level of this line in the mix, in dB. Older projects have none, which means 0. */
+  gain?: number;
 }
 
 export interface Line {
@@ -58,6 +60,26 @@ export interface Bed {
   take?: { id: string; ext: "mp3" | "wav"; seconds: number };
 }
 
+export interface ExportCfg {
+  rate: 44100 | 48000 | 96000;
+  bits: 16 | 24 | 32;
+  /** A loudness target id from loudness.ts, or off. */
+  target: string;
+  /** True-peak ceiling in dBTP. */
+  ceiling: number;
+  fps: number;
+  whole: boolean;
+  scenes: boolean;
+  lines: boolean;
+  stems: boolean;
+  markersInWav: boolean;
+  labels: boolean;
+  cueSheet: boolean;
+  otio: boolean;
+}
+
+export const DEFAULT_EXPORT: ExportCfg = { rate: 48000, bits: 24, target: "off", ceiling: -1, fps: 24, whole: true, scenes: false, lines: true, stems: false, markersInWav: true, labels: false, cueSheet: true, otio: false };
+
 export interface Project {
   version: 1;
   id: string;
@@ -70,6 +92,7 @@ export interface Project {
   gap: number;
   /** Written form to spoken form, applied to the words sent to a voice, never to the script itself. */
   pronunciations: Pronunciation[];
+  export?: Partial<ExportCfg>;
   createdAt: string;
   updatedAt: string;
 }

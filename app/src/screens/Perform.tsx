@@ -4,7 +4,7 @@ import { applySuggestion, describe, isDirected, parseDirector, systemPrompt, use
 import { applyPreset, chosenTake, EMOTIONS, PRESETS, SOUNDS, toggleIn, vkUnsupported } from "../direct";
 import { VisualLine } from "../VisualLine";
 import { api } from "../api";
-import { ENGINES } from "../engines";
+import { ENGINES, qualityFormat } from "../engines";
 import { makeSound, makeTake, modelLabel, plan, type Model } from "../generate";
 import { Plus, Play, Sparkle, Stop, Trash } from "../icons";
 import { stopPlayback, takeUrl } from "../media";
@@ -49,7 +49,7 @@ export default function Perform() {
     }
     try {
       for (let i = 0; i < count; i++) {
-        const t = await makeTake(project.id, line, voice, model, dict);
+        const t = await makeTake(project.id, line, voice, model, dict, qualityFormat(engines.quality));
         patchLine(line.id, (l) => ({ ...l, takes: [...l.takes, t], chosen: t.id }));
       }
       return true;
@@ -74,7 +74,7 @@ export default function Perform() {
       if (stop.current) break;
       const line = todo[i]!;
       try {
-        const t = await makeTake(project.id, line, voiceOf(line)!, model, dict);
+        const t = await makeTake(project.id, line, voiceOf(line)!, model, dict, qualityFormat(engines.quality));
         patchLine(line.id, (l) => ({ ...l, takes: [...l.takes, t], chosen: t.id }));
       } catch (e) {
         toast(`Stopped at line ${project.lines.indexOf(line) + 1}: ${(e as Error).message}`, true);
@@ -298,7 +298,7 @@ function DirectorReview({ result, onClose }: { result: DirectorResult; onClose: 
 }
 
 function LineCard({ line, index, character, voice, model, dict, patch, make }: { line: Line; index: number; character?: Character; voice?: VoiceEntry; model: Model; dict: Pronunciation[]; patch: (fn: (l: Line) => Line) => void; make: (l: Line, n?: number) => Promise<boolean> }) {
-  const { project, confirmSpend, toast } = useApp();
+  const { project, confirmSpend, toast, engines } = useApp();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [editText, setEditText] = useState(false);
@@ -321,7 +321,7 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
     if (!ok) return;
     setBusy(true);
     try {
-      const t = await makeSound(project.id, snd.prompt.trim(), snd.seconds);
+      const t = await makeSound(project.id, snd.prompt.trim(), snd.seconds, qualityFormat(engines.quality));
       patch((l) => ({ ...l, events: [...l.events, { id: "e-" + uid(), prompt: snd.prompt.trim(), placement: snd.placement, seconds: snd.seconds, take: t }] }));
       setSnd({ ...snd, prompt: "" });
     } catch (e) {
@@ -391,6 +391,11 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
           Speed
           <input type="range" min={0.7} max={1.2} step={0.05} value={d.speed} aria-label="Speed" onChange={(e) => patch((l) => ({ ...l, direction: { ...l.direction, speed: Number(e.target.value) } }))} />
           <span className="num">{d.speed.toFixed(2)}×</span>
+        </label>
+        <label className="row small muted">
+          Level
+          <input type="range" min={-18} max={9} step={0.5} value={d.gain ?? 0} aria-label="Level in dB" onChange={(e) => patch((l) => ({ ...l, direction: { ...l.direction, gain: Number(e.target.value) } }))} onDoubleClick={() => patch((l) => ({ ...l, direction: { ...l.direction, gain: 0 } }))} title="Double-click to reset" />
+          <span className="num">{(d.gain ?? 0) > 0 ? "+" : ""}{(d.gain ?? 0).toFixed(1)} dB</span>
         </label>
         <label className="row small muted">
           Pause after
