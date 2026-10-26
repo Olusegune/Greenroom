@@ -44,11 +44,19 @@ function useAdd() {
 }
 
 function Mine({ goFind }: { goFind: () => void }) {
-  const { library, saveLibrary, keys, toast } = useApp();
+  const { library, saveLibrary, keys, toast, project, edit, go } = useApp();
   const sample = useSample();
   const { busy, run } = useBusy();
   const [sure, setSure] = useState("");
   const [only, setOnly] = useState<Engine | "all">("all");
+  const speakers = project ? project.characters.filter((c) => project.lines.some((l) => l.characterId === c.id)) : [];
+  const usedBy = (v: VoiceEntry) => speakers.filter((c) => c.voiceId === v.id).map((c) => c.name);
+  const useFor = (v: VoiceEntry, characterId: string) => {
+    const c = speakers.find((x) => x.id === characterId);
+    if (!c) return;
+    edit((p) => ({ ...p, characters: p.characters.map((x) => (x.id === characterId ? { ...x, voiceId: v.id } : x)) }));
+    toast(`${c.name} will now use ${v.name}.`);
+  };
 
   const importAccount = () =>
     run(async () => {
@@ -116,6 +124,34 @@ function Mine({ goFind }: { goFind: () => void }) {
               </div>
               <div className="meta">{voiceLine(v) && <span className="badge">{voiceLine(v)}</span>}</div>
               <input type="text" aria-label={`Notes for ${v.name}`} placeholder="Notes, for example: good for Ada's older sister" value={v.notes} onChange={(e) => patch(v.id, v.provider, { notes: e.target.value })} />
+              {usedBy(v).length > 0 && (
+                <div className="meta">
+                  {usedBy(v).map((n) => (
+                    <span key={n} className="badge ok">
+                      Voice of {n}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {project && speakers.length > 0 ? (
+                <select aria-label={`Use ${v.name} for a character`} value="" onChange={(e) => e.target.value && useFor(v, e.target.value)}>
+                  <option value="">Use this voice for…</option>
+                  {speakers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                      {c.voiceId === v.id ? " (already)" : ""}
+                    </option>
+                  ))}
+                </select>
+              ) : project ? (
+                <button className="sm" onClick={() => go("write")}>
+                  Write a script to use this voice
+                </button>
+              ) : (
+                <button className="sm" onClick={() => go("home")}>
+                  Open a project to use this voice
+                </button>
+              )}
               <div className="row wrap">
                 <PlayButton label="Hear it" get={() => sample(v)} />
                 <span className="spacer" />

@@ -74,3 +74,9 @@ audio { height: 34px; max-width: 100%; }
 .rate button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 .progress { height: 4px; background: var(--surface-4); border-radius: 2px; overflow: hidden; }
 .progress > i { display: block; height: 100%; background: var(--accent); transition: width var(--t-base) var(--ease); }
+
+/* Long option text must never push a control outside its card. */
+.card, .stack > *, .grid > *, label.field { min-width: 0; }
+label.field select, label.field input, label.field textarea { width: 100%; max-width: 100%; min-width: 0; }
+select { max-width: 100%; text-overflow: ellipsis; }
+.card select, .card input[type="text"], .card input[type="search"] { max-width: 100%; }

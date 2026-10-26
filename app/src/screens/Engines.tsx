@@ -180,11 +180,11 @@ function LocalServer() {
       </div>
       <p className="muted small">{ENGINES.local.blurb} It must speak the OpenAI-style speech API (<code>/v1/audio/speech</code>) and run on this computer. For privacy, only 127.0.0.1 and localhost addresses are accepted.</p>
       <div className="row wrap">
-        <label className="field" style={{ flex: 2, minWidth: 220 }}>
+        <label className="field" style={{ flex: 2, minWidth: "min(220px, 100%)" }}>
           Address
           <input type="text" value={cfg.url} onChange={(e) => setCfg({ ...cfg, url: e.target.value })} placeholder="http://127.0.0.1:8880" />
         </label>
-        <label className="field" style={{ flex: 1, minWidth: 140 }}>
+        <label className="field" style={{ flex: 1, minWidth: "min(140px, 100%)" }}>
           Model name
           <input type="text" value={cfg.model} onChange={(e) => setCfg({ ...cfg, model: e.target.value })} placeholder="kokoro" />
         </label>
