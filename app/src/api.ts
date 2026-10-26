@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type { Project, VoiceEntry, VoiceInfo } from "./types";
 import { mock } from "./mock";
 import type { EnginesCfg } from "./engines";
@@ -46,6 +47,18 @@ export interface PiperStatus {
   installed: boolean;
   voices: string[];
 }
+export interface VideoInfo {
+  container: string;
+  /** True when the frame rate and length were read from the file. */
+  known: boolean;
+  fpsNum: number;
+  fpsDen: number;
+  durationSec: number;
+  width: number;
+  height: number;
+}
+export const VIDEO_EXTENSIONS = ["mp4", "mov", "m4v", "webm", "mkv", "avi", "mpg", "mpeg"];
+
 export interface ProjectInfo {
   id: string;
   name: string;
@@ -95,10 +108,23 @@ const real = {
   piperRemoveVoice: (key: string) => call<void>("piper_remove_voice", { key }),
   localVoices: () => call<string[]>("local_voices"),
   directorComplete: (system: string, user: string) => call<string>("director_complete", { system, user }),
+  videoProbe: (path: string) => call<VideoInfo>("video_probe", { path }),
+  videoAllow: (path: string) => call<void>("video_allow", { path }),
+  /** Opens the Windows file picker. Returns null if the owner cancels. */
+  pickVideo: async (): Promise<string | null> => {
+    const r = await openDialog({ multiple: false, directory: false, filters: [{ name: "Video", extensions: VIDEO_EXTENSIONS }] });
+    return typeof r === "string" ? r : null;
+  },
 };
 
 export type Api = typeof real;
 export const api: Api = inApp() ? real : mock;
+
+/** The address the player uses for a chosen video. In a plain browser (demo mode) a test video can be supplied by the page. */
+export function videoUrl(path: string): string {
+  if (inApp()) return convertFileSrc(path);
+  return (window as unknown as { __greenroomDemoVideo?: string }).__greenroomDemoVideo ?? "";
+}
 
 export function toUrl(a: Audio): string {
   const bin = atob(a.audioB64);

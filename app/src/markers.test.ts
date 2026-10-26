@@ -106,3 +106,57 @@ describe("OpenTimelineIO", () => {
     expect(doc.tracks.children[0].children[0].media_reference.OTIO_SCHEMA).toBe("MissingReference.1");
   });
 });
+
+describe("OpenTimelineIO with a picture", () => {
+  const files = { ta: "C:/x/a.wav", tb: "C:/x/b.mp3", s1: "C:/x/door.mp3", bed1: "C:/x/rain.mp3" };
+  const pic = { path: "D:/Film/Rough Cut.mov", name: "Rough Cut.mov", fpsNum: 24000, fpsDen: 1001, fpsKnown: true, duration: 20.02, width: 1920, height: 1080, startFrame: 86400 };
+
+  it("uses the picture's exact frame rate and start timecode and carries a video track", () => {
+    const p = project();
+    const doc = JSON.parse(otioTimeline(p, planTimeline(p, undefined, { minTotal: pic.duration }), 24, files, pic));
+    expect(doc.global_start_time.value).toBe(86400);
+    expect(doc.global_start_time.rate).toBeCloseTo(23.976023976, 6);
+    expect(doc.metadata.greenroom.start_timecode).toBe("01:00:00:00");
+    const names = doc.tracks.children.map((t: { name: string; kind: string }) => `${t.kind}:${t.name}`);
+    expect(names[0]).toBe("Video:Picture");
+    expect(names.slice(1)).toEqual(["Audio:ADA", "Audio:TUNDE", "Audio:Sound clips", "Audio:Atmosphere"]);
+    const v = doc.tracks.children[0].children[0];
+    expect(v.media_reference.target_url).toBe("file:///D:/Film/Rough%20Cut.mov");
+    expect(v.source_range.duration.value).toBeCloseTo(20.02 * (24000 / 1001), 4);
+  });
+
+  it("puts overlapping dialogue on its own lane so no track holds two clips at once", () => {
+    const p = project();
+    p.lines[1]!.characterId = "c1"; // TUNDE's line now belongs to ADA
+    p.lines[0]!.cue = 0;
+    p.lines[1]!.cue = 1; // starts while ADA's first line (2 s) is still speaking
+    const plan = planTimeline(p);
+    const doc = JSON.parse(otioTimeline(p, plan, 24, files));
+    const names = doc.tracks.children.map((t: { name: string }) => t.name);
+    expect(names.slice(0, 2)).toEqual(["ADA", "ADA 2"]);
+    const lane2 = doc.tracks.children[1].children;
+    expect(lane2[0].OTIO_SCHEMA).toBe("Gap.1");
+    expect(lane2[0].source_range.duration.value).toBe(1 * 24);
+    for (const t of doc.tracks.children) {
+      let cursor = 0;
+      for (const c of t.children) cursor += c.source_range.duration.value;
+      expect(cursor).toBeLessThanOrEqual(plan.total * 24 + 1e-6);
+    }
+  });
+
+  it("writes the cue sheet in the picture's timecode", () => {
+    const p = project();
+    p.lines[0]!.cue = 3;
+    const csv = cueSheetCsv(p, planTimeline(p), 24, [], pic);
+    expect(csv).toContain("01:00:03:00");
+  });
+});
+
+describe("markers past the end of the mix", () => {
+  it("leave out a line that starts after the mix ends", () => {
+    const p = project();
+    p.lines[1]!.cue = 50;
+    const m = buildMarkers(p, planTimeline(p, undefined, { exactTotal: 10 }));
+    expect(m.map((x) => x.name)).toEqual(["01 ADA"]);
+  });
+});

@@ -37,3 +37,14 @@
 .vx { width: 18px; height: 18px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; justify-content: center; opacity: 0.7; }
 .vx:hover:not(:disabled) { background: color-mix(in srgb, var(--tag) 30%, transparent); opacity: 1; }
 .vpicker { position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 6px); display: grid; gap: 10px; box-shadow: var(--shadow-2); }
+
+/* Picture */
+.pic-stage { background: #000; border: 1px solid var(--line); border-radius: var(--r-card); display: grid; place-items: center; min-height: 220px; overflow: hidden; }
+.pic-stage video { max-width: 100%; max-height: 380px; display: block; }
+.pic-tc { font-family: var(--font-mono); font-size: 22px; letter-spacing: 0.04em; color: var(--accent-text); }
+.pic-strip { position: relative; height: 64px; background: var(--surface-1); border: 1px solid var(--control-line); border-radius: var(--r-ctl); overflow: hidden; cursor: pointer; touch-action: none; }
+.pic-block { position: absolute; top: 12px; height: 40px; min-width: 6px; border-radius: 4px; background: color-mix(in srgb, var(--c) 22%, transparent); border: 1px dashed var(--c); cursor: grab; }
+.pic-block.cued { background: color-mix(in srgb, var(--c) 55%, transparent); border-style: solid; }
+.pic-block.sel { outline: 2px solid var(--focus); outline-offset: 1px; }
+.pic-block:active { cursor: grabbing; }
+.pic-head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--err); pointer-events: none; box-shadow: 0 0 6px rgba(255, 138, 128, 0.6); }

@@ -31,18 +31,35 @@ export interface Plan {
   spans: Span[];
 }
 
-/** Lays the scene out in order: sound before, speech, sound after, then the line's pause (or the project gap). */
-export function planTimeline(p: Pick<Project, "lines" | "gap" | "bed">, sceneIndex?: number): Plan {
+export interface PlanOptions {
+  /** The plan is at least this long. */
+  minTotal?: number;
+  /** The plan is exactly this long, for example the length of the picture: anything after it is cut off when mixed. */
+  exactTotal?: number;
+}
+
+/**
+ * Lays the lines out: sound before, speech, sound after, then the line's pause (or the project gap). A line with a cue
+ * starts speaking at that time in the picture, even if that overlaps the line before; a line without one follows the
+ * line before it. Plans for a single scene ignore cues and run in order from zero.
+ */
+export function planTimeline(p: Pick<Project, "lines" | "gap" | "bed">, sceneIndex?: number, opts: PlanOptions = {}): Plan {
   const items: Placed[] = [];
   const spans: Span[] = [];
   const missing: string[] = [];
   let t = 0;
+  let furthest = 0;
   for (const line of p.lines) {
     if (sceneIndex !== undefined && line.scene !== sceneIndex) continue;
     const take = chosenTake(line);
     if (!take) {
       missing.push(line.id);
       continue;
+    }
+    if (sceneIndex === undefined && typeof line.cue === "number" && Number.isFinite(line.cue)) {
+      // Sound placed before the speech comes first, so the speech itself lands on the cue.
+      const lead = line.events.filter((x) => x.placement === "before" && x.take).reduce((s, e) => s + e.take!.seconds, 0);
+      t = Math.max(0, line.cue - lead);
     }
     for (const e of line.events.filter((x) => x.placement === "before" && x.take)) {
       items.push({ kind: "event", lineId: line.id, characterId: line.characterId, ref: e.take!, start: t, seconds: e.take!.seconds, gainDb: 0 });
@@ -56,9 +73,11 @@ export function planTimeline(p: Pick<Project, "lines" | "gap" | "bed">, sceneInd
       t += e.take!.seconds;
     }
     t += Number.isFinite(line.direction.pauseAfter) ? Math.max(0, line.direction.pauseAfter) : p.gap;
+    furthest = Math.max(furthest, t);
   }
-  if (p.bed.take && t > 0) items.unshift({ kind: "bed", ref: p.bed.take, start: 0, seconds: t, gainDb: 0 });
-  return { items, total: t, missing, spans };
+  const total = opts.exactTotal ?? Math.max(furthest, opts.minTotal ?? 0);
+  if (p.bed.take && total > 0) items.unshift({ kind: "bed", ref: p.bed.take, start: 0, seconds: total, gainDb: 0 });
+  return { items, total: spans.length || opts.minTotal || opts.exactTotal ? total : 0, missing, spans };
 }
 
 export interface Stem {
@@ -96,6 +115,8 @@ export interface WavOptions {
   /** Adds a Broadcast Wave `bext` chunk with this description. */
   description?: string;
   originator?: string;
+  /** Broadcast Wave time reference: the sample position of the first sample since midnight, so a DAW can place the file at its timecode. */
+  timeReference?: number;
 }
 
 function ascii(v: DataView, o: number, s: string, max = s.length) {
@@ -112,7 +133,7 @@ export function encodeWav(channels: Float32Array[], sampleRate: number, opts: Wa
   const float = bits === 32;
   const dataBytes = n * ch * bytes;
   const markers = (opts.markers ?? []).filter((m) => Number.isFinite(m.sec) && m.sec >= 0);
-  const bext = opts.description !== undefined || opts.originator !== undefined;
+  const bext = opts.description !== undefined || opts.originator !== undefined || opts.timeReference !== undefined;
 
   const fmtSize = 8 + 16;
   const factSize = float ? 8 + 4 : 0;
@@ -154,6 +175,9 @@ export function encodeWav(channels: Float32Array[], sampleRate: number, opts: Wa
     const d = new Date();
     ascii(v, b + 320, d.toISOString().slice(0, 10), 10);
     ascii(v, b + 330, d.toISOString().slice(11, 19), 8);
+    const tr = Math.max(0, Math.floor(opts.timeReference ?? 0));
+    v.setUint32(b + 338, tr % 0x100000000, true);
+    v.setUint32(b + 342, Math.floor(tr / 0x100000000), true);
     v.setUint16(b + 346, 1, true); // BWF version
     o += bextSize;
   }

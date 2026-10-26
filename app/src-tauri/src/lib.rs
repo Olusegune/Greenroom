@@ -6,6 +6,7 @@ mod kie;
 mod local;
 mod net;
 mod store;
+mod video;
 mod voicekiller;
 
 use base64::Engine;
@@ -238,6 +239,21 @@ async fn preview_fetch(url: String) -> Result<Audio, String> {
 // ---- projects, takes, library, exports ------------------------------------------------------------------------
 
 #[tauri::command]
+async fn video_probe(path: String) -> Result<video::VideoInfo, String> {
+    blocking(move || video::probe(std::path::Path::new(&path))).await
+}
+
+/// Lets the player read one video the owner chose, and nothing else on the disk.
+#[tauri::command]
+fn video_allow(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let p = std::path::PathBuf::from(&path);
+    if video::ext_of(&p).is_none() || !p.is_file() {
+        return Err("That video file could not be found.".into());
+    }
+    app.asset_protocol_scope().allow_file(&p).map_err(|_| "Could not open that video for playback.".to_string())
+}
+
+#[tauri::command]
 fn project_list(app: tauri::AppHandle) -> Result<Vec<store::ProjectInfo>, String> {
     Ok(store::project_list(&root(&app)?))
 }
@@ -390,10 +406,11 @@ async fn local_voices(app: tauri::AppHandle) -> Result<Vec<String>, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             key_status, set_key, clear_key, run_clip, voices_mine, voices_voicekiller, voices_shared, voice_add_shared, voice_design, voice_design_save, voice_clone,
             voice_delete, preview_fetch, project_list, project_load, project_save, take_write, take_read, export_write, library_load, library_save,
-            save_report, director_complete, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
+            save_report, video_probe, video_allow, director_complete, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
         ])
         .run(tauri::generate_context!())
         .expect("error while running Greenroom");

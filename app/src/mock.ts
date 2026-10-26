@@ -3,7 +3,7 @@
 
 import { encodeWav, toBase64 } from "./audio";
 import type { Project, VoiceEntry, VoiceInfo } from "./types";
-import type { Api, ClipReq, KeyName, PiperVoice } from "./api";
+import type { Api, ClipReq, KeyName, PiperVoice, VideoInfo } from "./api";
 import type { EnginesCfg } from "./engines";
 
 const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms));
@@ -95,5 +95,8 @@ export const mock: Api = {
     const lines = ids.map((id, i) => ({ id, emotion: i % 3 === 0 ? "annoyed" : "", sounds: i % 3 === 1 ? ["sighs"] : i % 4 === 2 ? ["laughs"] : [], note: i % 2 === 0 ? "a little tired, as if carrying a heavy box" : "", speed: 1, pauseAfter: 0.5 }));
     return ["Here you go:", "```json", JSON.stringify({ lines, atmosphere: "a busy kitchen, soft pots and pans" }), "```"].join("\n");
   },
+  videoProbe: async (path: string): Promise<VideoInfo> => ({ container: path.split(".").pop() ?? "mp4", known: false, fpsNum: 0, fpsDen: 0, durationSec: 0, width: 0, height: 0 }),
+  videoAllow: async () => undefined,
+  pickVideo: async () => "C:/Demo/Rough Cut.webm",
   saveReport: async () => "C:\\Users\\you\\Documents\\Greenroom\\listening-report.md",
 };

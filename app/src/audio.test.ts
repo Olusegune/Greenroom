@@ -177,3 +177,62 @@ describe("level and stems", () => {
     expect(stemSets(p, [{ id: "c1", name: "ADA" }]).map((s) => s.name)).toEqual(["ADA"]);
   });
 });
+
+describe("cues against picture", () => {
+  const cued = (id: string, secs: number, cue?: number, extra: Partial<Line> = {}): Line => ({ ...line(id, 0, secs), direction: { ...DEFAULT_DIRECTION, pauseAfter: 0 }, ...(cue === undefined ? {} : { cue }), ...extra });
+  it("starts a cued line at its cue and lets the next uncued line follow it", () => {
+    const p = planTimeline({ lines: [cued("a", 2, 10), cued("b", 1), cued("c", 1, 30)], gap: 0, bed });
+    expect(p.spans).toEqual([{ lineId: "a", start: 10, end: 12 }, { lineId: "b", start: 12, end: 13 }, { lineId: "c", start: 30, end: 31 }]);
+    expect(p.total).toBe(31);
+  });
+  it("allows dialogue to overlap", () => {
+    const p = planTimeline({ lines: [cued("a", 4, 5), cued("b", 3, 7)], gap: 0, bed });
+    expect(p.spans.map((s) => [s.start, s.end])).toEqual([[5, 9], [7, 10]]);
+    expect(p.total).toBe(10);
+  });
+  it("puts sound before the speech ahead of the cue so the speech lands on it", () => {
+    const ev = { id: "e", prompt: "", placement: "before" as const, seconds: 1.5, take: { id: "x", ext: "mp3" as const, seconds: 1.5 } };
+    const p = planTimeline({ lines: [cued("a", 2, 10, { events: [ev] })], gap: 0, bed });
+    expect(p.items.map((i) => [i.kind, i.start])).toEqual([["event", 8.5], ["speech", 10]]);
+  });
+  it("never lets sound before a line start before zero", () => {
+    const ev = { id: "e", prompt: "", placement: "before" as const, seconds: 3, take: { id: "x", ext: "mp3" as const, seconds: 3 } };
+    const p = planTimeline({ lines: [cued("a", 1, 1, { events: [ev] })], gap: 0, bed });
+    expect(p.items[0]!.start).toBe(0);
+    expect(p.items[1]!.start).toBe(3);
+  });
+  it("is at least as long as the picture, with the atmosphere running the whole way", () => {
+    const withBed = { prompt: "rain", volume: 0.3, take: { id: "bed", ext: "mp3" as const, seconds: 5 } };
+    const p = planTimeline({ lines: [cued("a", 2, 1)], gap: 0, bed: withBed }, undefined, { minTotal: 60 });
+    expect(p.total).toBe(60);
+    expect(p.items[0]).toMatchObject({ kind: "bed", start: 0, seconds: 60 });
+  });
+  it("ignores cues when planning a single scene", () => {
+    const p = planTimeline({ lines: [cued("a", 2, 10), cued("b", 1, 40)], gap: 0, bed }, 0);
+    expect(p.spans.map((s) => s.start)).toEqual([0, 2]);
+  });
+  it("reports nothing for an empty plan even with a minimum length unset", () => {
+    expect(planTimeline({ lines: [], gap: 0, bed }).total).toBe(0);
+  });
+});
+
+describe("Broadcast Wave time reference", () => {
+  it("stores the first sample's position since midnight, including beyond 32 bits", () => {
+    const at = (buf: ArrayBuffer) => { const v = new DataView(buf); const c = chunks(buf); return v.getUint32(c["bext"]!.at + 338, true) + v.getUint32(c["bext"]!.at + 342, true) * 0x100000000; };
+    expect(at(encodeWav([new Float32Array(4)], 48000, { bits: 24, timeReference: 86400 * 2000 }))).toBe(172_800_000);
+    expect(at(encodeWav([new Float32Array(4)], 48000, { bits: 24, timeReference: 2 ** 32 + 5 }))).toBe(2 ** 32 + 5);
+    expect(at(encodeWav([new Float32Array(4)], 48000, { bits: 24, description: "x" }))).toBe(0);
+  });
+});
+
+describe("exact length for a picture", () => {
+  const l = (id: string, cue: number | undefined, secs: number): Line => ({ ...line(id, 0, secs), direction: { ...DEFAULT_DIRECTION, pauseAfter: 0 }, ...(cue === undefined ? {} : { cue }) });
+  it("makes the plan exactly the picture's length, even when lines run past it", () => {
+    const p = planTimeline({ lines: [l("a", 1, 2), l("b", 9, 4)], gap: 0, bed }, undefined, { exactTotal: 10 });
+    expect(p.total).toBe(10);
+    expect(p.spans.map((s) => s.end)).toEqual([3, 13]);
+  });
+  it("is the picture's length even with no takes", () => {
+    expect(planTimeline({ lines: [], gap: 0, bed }, undefined, { exactTotal: 7 }).total).toBe(7);
+  });
+});

@@ -67,6 +67,8 @@ export interface Line {
   takes: Take[];
   chosen?: string;
   events: SoundEvent[];
+  /** Seconds from the start of the picture at which this line starts speaking. Without one, the line follows the one before it. */
+  cue?: number;
 }
 
 export interface Pronunciation {
@@ -96,13 +98,31 @@ export interface ExportCfg {
   labels: boolean;
   cueSheet: boolean;
   otio: boolean;
+  /** With a picture: make the mix exactly as long as the picture. */
+  matchPicture: boolean;
   /** A production report and a rights register. */
   report: boolean;
   /** A list of the SHA-256 of every exported file. */
   manifest: boolean;
 }
 
-export const DEFAULT_EXPORT: ExportCfg = { rate: 48000, bits: 24, target: "off", ceiling: -1, fps: 24, whole: true, scenes: false, lines: true, stems: false, markersInWav: true, labels: false, cueSheet: true, otio: false, report: true, manifest: true };
+export const DEFAULT_EXPORT: ExportCfg = { rate: 48000, bits: 24, target: "off", ceiling: -1, fps: 24, whole: true, scenes: false, lines: true, stems: false, markersInWav: true, labels: false, cueSheet: true, otio: false, matchPicture: true, report: true, manifest: true };
+
+/** A video the sound is being made for. The file stays where it is; only its path and facts are kept. */
+export interface Picture {
+  path: string;
+  name: string;
+  /** Frame rate as a fraction, for example 24000 / 1001 for 23.976. */
+  fpsNum: number;
+  fpsDen: number;
+  /** True when the frame rate was read from the file, false when the owner chose it. */
+  fpsKnown: boolean;
+  duration: number;
+  width: number;
+  height: number;
+  /** Frame number shown at the first frame (non-drop), for example 01:00:00:00 at 24 fps is 86400. */
+  startFrame: number;
+}
 
 export interface Project {
   version: 1;
@@ -119,6 +139,7 @@ export interface Project {
   export?: Partial<ExportCfg>;
   /** Spend limit for this project, in the currency set in Studio. */
   budget?: number;
+  picture?: Picture;
   ledger?: LedgerEntry[];
   createdAt: string;
   updatedAt: string;

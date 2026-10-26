@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { api, inApp } from "../api";
-import { encodeWav, fmtTime, fromBase64, lineFileName, renderPlan, stemSets, textBase64, toBase64, type Plan } from "../audio";
+import { encodeWav, fmtTime, fromBase64, lineFileName, planTimeline, renderPlan, stemSets, textBase64, toBase64, type Plan } from "../audio";
+import { fpsLabel, fpsOf, frameToSec, tcAt } from "../picture";
 import { useApp } from "../ctx";
 import { chosenTake } from "../direct";
 import { qualityFormat } from "../engines";
@@ -25,13 +26,15 @@ export default function Export() {
   const [stat, setStat] = useState<{ m: Measure; seconds: number; rate: number } | null>(null);
   const [step, setStep] = useState("");
   const [report, setReport] = useState<string>("");
+  const [sync, setSync] = useState<string>("");
   if (!project) return null;
 
   const cfg: ExportCfg = { ...DEFAULT_EXPORT, ...(project.export ?? {}) };
   const set = (p: Partial<ExportCfg>) => edit((pr) => ({ ...pr, export: { ...DEFAULT_EXPORT, ...(pr.export ?? {}), ...p } }));
   const target = TARGETS.find((t) => t.id === cfg.target) ?? TARGETS[0]!;
 
-  const plan = audioPlan(project);
+  const pic = project.picture;
+  const plan = planTimeline(project, undefined, { exactTotal: pic && cfg.matchPicture && pic.duration > 0 ? pic.duration : undefined });
   const missing = project.lines.filter((l) => !chosenTake(l));
   const stem = project.name.replace(/[^\p{L}\p{N} _-]+/gu, "").trim() || "Greenroom";
   const chosen = project.lines.map(chosenTake).filter((t): t is NonNullable<typeof t> => !!t);
@@ -90,7 +93,8 @@ export default function Export() {
     run(async () => {
       const out: string[] = [];
       const written: Record<string, string> = {};
-      const wav = (markers?: { sec: number; name: string }[]) => ({ bits: cfg.bits, dither: cfg.bits === 16, markers, description: project.name, originator: "Greenroom" });
+      // With a picture, the file says which timecode its first sample belongs to, so an editor can place it by timecode.
+      const wav = (markers?: { sec: number; name: string }[], tc = false) => ({ bits: cfg.bits, dither: cfg.bits === 16, markers, description: project.name, originator: "Greenroom", timeReference: tc && pic ? Math.round(frameToSec(pic.startFrame, fpsOf(pic)) * cfg.rate) : undefined });
       const hashes: string[] = [];
       const save = async (folder: string, name: string, b64: string) => {
         const p = await api.exportWrite(project.id, folder, name, b64);
@@ -107,7 +111,7 @@ export default function Export() {
 
         if (cfg.whole) {
           setStep("Writing the full scene…");
-          await save("", `${stem} - full scene.wav`, toBase64(encodeWav(applyGain(main, np.gainDb), cfg.rate, wav(cfg.markersInWav ? markers : undefined))));
+          await save("", `${stem} - full scene.wav`, toBase64(encodeWav(applyGain(main, np.gainDb), cfg.rate, wav(cfg.markersInWav ? markers : undefined, true))));
         }
         if (cfg.scenes) {
           for (let i = 0; i < project.scenes.length; i++) {
@@ -124,7 +128,7 @@ export default function Export() {
           for (const s of stemSets(plan, project.characters)) {
             setStep(`Writing the ${s.name} stem…`);
             const ch = await render(plan, s.filter);
-            await save("Stems", `${stem} - stem - ${s.name}.wav`.replace(/[^\p{L}\p{N} _.-]+/gu, ""), toBase64(encodeWav(applyGain(ch, np.gainDb), cfg.rate, wav())));
+            await save("Stems", `${stem} - stem - ${s.name}.wav`.replace(/[^\p{L}\p{N} _.-]+/gu, ""), toBase64(encodeWav(applyGain(ch, np.gainDb), cfg.rate, wav(undefined, true))));
           }
         }
         if (cfg.lines || cfg.otio) {
@@ -145,8 +149,8 @@ export default function Export() {
           }
         }
         if (cfg.labels) await save("", `${stem} - markers.txt`, textBase64(audacityLabels(buildMarkers(project, plan))));
-        if (cfg.cueSheet) await save("", `${stem} - cue sheet.csv`, textBase64(cueSheetCsv(project, plan, cfg.fps, library)));
-        if (cfg.otio) await save("", `${stem}.otio`, textBase64(otioTimeline(project, plan, cfg.fps, written)));
+        if (cfg.cueSheet) await save("", `${stem} - cue sheet.csv`, textBase64(cueSheetCsv(project, plan, cfg.fps, library, pic)));
+        if (cfg.otio) await save("", `${stem}.otio`, textBase64(otioTimeline(project, plan, cfg.fps, written, pic)));
         if (cfg.report) {
           const now = new Date().toISOString().slice(0, 16).replace("T", " ");
           await save("", `${stem} - production report.md`, textBase64(productionReportMd({ project, library, prices: engines.prices, appVersion: APP_VERSION, now })));
@@ -155,6 +159,11 @@ export default function Export() {
         if (cfg.manifest && hashes.length) await save("", `${stem} - manifest.sha256.txt`, textBase64(hashes.join("\n") + "\n"));
 
         setMade(out);
+        setSync(
+          pic
+            ? `Picture: ${pic.name} at ${fpsLabel(fpsOf(pic))}. The mix is ${plan.total.toFixed(3)} s (${Math.ceil(plan.total * cfg.rate)} samples at ${cfg.rate / 1000} kHz) against a picture of ${pic.duration.toFixed(3)} s. Its first sample is timecode ${tcAt(0, pic)}.`
+            : "",
+        );
         setReport(
           target.lufs === null
             ? `Level left as mixed: ${fmtLufs(m.lufs)}, true peak ${fmtDb(m.tpDb)} (estimate).`
@@ -243,6 +252,16 @@ export default function Export() {
         )}
       </div>
 
+      {pic && (
+        <div className="card stack">
+          <h2>Picture</h2>
+          <p className="muted small">
+            {pic.name} · {fpsLabel(fpsOf(pic))} · starts at {tcAt(0, pic)} · {pic.duration.toFixed(3)} s. Lines you placed on the Picture screen keep their exact times in every file, and the cue sheet and editor timeline use this frame rate and start timecode.
+          </p>
+          {check("matchPicture", "Make the mix exactly as long as the picture", "So the file drops onto the video from its first frame to its last. Anything placed after the picture ends is cut off.")}
+        </div>
+      )}
+
       <div className="card stack">
         <h2>Format and loudness</h2>
         <div className="row wrap">
@@ -321,7 +340,7 @@ export default function Export() {
         {check("markersInWav", "Markers inside the WAV files", "One at the start of each line. Shown by Audition, Reaper, Pro Tools and most editors.")}
         {check("labels", "A label track (.txt)", "Imports into Audacity and Reaper.")}
         {check("cueSheet", "A cue sheet (.csv)", "Every line with its timecode, voice, model and text.")}
-        {check("otio", "A timeline for editors (.otio)", "A track for each stem with clips at their exact times. Includes the original files it points to.")}
+        {check("otio", "A timeline for editors (.otio)", "A track for each stem with clips at their exact times, plus the video if you added one. Includes the original files it points to.")}
         <h3 style={{ marginTop: 8 }}>For producers and legal</h3>
         {check("report", "Production report and rights register", "AI disclosure, voices and consent, estimated cost, every take with its fingerprint.")}
         {check("manifest", "Integrity manifest", "The SHA-256 of every file saved, so a changed file can be spotted later.")}
@@ -365,6 +384,7 @@ export default function Export() {
         <div className="card stack lit" aria-live="polite">
           <h2>Saved</h2>
           {report && <p className="small">{report}</p>}
+          {sync && <p className="small">{sync}</p>}
           {made.map((p) => (
             <div key={p} className="row between small">
               <code style={{ wordBreak: "break-all" }}>{p}</code>
