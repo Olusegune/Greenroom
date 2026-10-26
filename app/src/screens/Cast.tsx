@@ -1,17 +1,22 @@
+import { useState } from "react";
 import { useApp } from "../ctx";
+import { ENGINES, ENGINE_ORDER, type Engine } from "../engines";
+import { Flag } from "../flags";
 import { ChevronRight } from "../icons";
-import { LANGUAGES, MIXED_LANGUAGES } from "../languages";
+import { TILES, tileByName } from "../languages";
 import { Empty, Note, PlayButton } from "../ui";
 import { useSample, voiceLine } from "../useSample";
 
 export default function Cast() {
   const { project, edit, library, go } = useApp();
   const sample = useSample();
+  const [engine, setEngine] = useState<Engine | "all">("all");
   if (!project) return null;
 
   const used = new Set(project.lines.map((l) => l.characterId));
   const cast = project.characters.filter((c) => used.has(c.id));
   const missing = cast.filter((c) => !c.voiceId || !library.some((v) => v.id === c.voiceId)).length;
+  const present = ENGINE_ORDER.filter((e) => library.some((v) => v.provider === e));
 
   const patch = (id: string, p: Partial<(typeof project.characters)[number]>) => edit((pr) => ({ ...pr, characters: pr.characters.map((c) => (c.id === id ? { ...c, ...p } : c)) }));
 
@@ -37,7 +42,7 @@ export default function Cast() {
     <section>
       <div>
         <h1>Cast</h1>
-        <p className="lede">Choose a voice for each character. The language is a reminder of how they speak: the voice you pick decides the accent, so choose one that fits.</p>
+        <p className="lede">Choose a voice for each character. The language is a reminder of how they speak: the voice you pick decides the accent and the engine.</p>
       </div>
       {library.length === 0 && (
         <Note kind="warn">
@@ -47,36 +52,57 @@ export default function Cast() {
           </button>
         </Note>
       )}
+      {present.length > 1 && (
+        <div className="row wrap">
+          <span className="muted small">Choose from</span>
+          <span className="chips" role="group" aria-label="Engine">
+            <button className="chip" aria-pressed={engine === "all"} onClick={() => setEngine("all")}>
+              All engines
+            </button>
+            {present.map((e) => (
+              <button key={e} className="chip" aria-pressed={engine === e} onClick={() => setEngine(e)}>
+                {ENGINES[e].label}
+              </button>
+            ))}
+          </span>
+        </div>
+      )}
       <div className="grid">
         {cast.map((c) => {
           const voice = library.find((v) => v.id === c.voiceId);
           const first = project.lines.find((l) => l.characterId === c.id);
+          const options = library.filter((v) => engine === "all" || v.provider === engine || v.id === c.voiceId);
+          const tile = tileByName(c.language);
           return (
             <div key={c.id} className={voice ? "card voice-card lit" : "card voice-card"}>
               <div className="row between">
                 <h2 className="speaker">{c.name}</h2>
-                <span className={voice ? "badge ok" : "badge warn"}>{voice ? "Voice chosen" : "No voice yet"}</span>
+                <span className={voice ? "badge ok" : "badge warn"}>{voice ? ENGINES[voice.provider].label : "No voice yet"}</span>
               </div>
               <label className="field">
                 Voice
                 <select value={c.voiceId ?? ""} onChange={(e) => patch(c.id, { voiceId: e.target.value || undefined })}>
                   <option value="">Choose a voice…</option>
-                  {library.map((v) => (
+                  {options.map((v) => (
                     <option key={v.provider + v.id} value={v.id}>
-                      {v.name} {voiceLine(v) ? `(${voiceLine(v)})` : ""} {v.provider === "voicekiller" ? "· VoiceKiller" : ""}
+                      {v.name} {voiceLine(v) ? `(${voiceLine(v)})` : ""} · {ENGINES[v.provider].label}
                     </option>
                   ))}
                 </select>
               </label>
               <label className="field">
                 Language they speak
-                <select value={c.language} onChange={(e) => patch(c.id, { language: e.target.value })}>
-                  {[...LANGUAGES.map((l) => l.name), ...MIXED_LANGUAGES].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
+                <span className="row">
+                  {tile ? <Flag cc={tile.cc} /> : <span className="flag-ph" style={{ width: 22, height: 16 }} />}
+                  <select value={c.language} onChange={(e) => patch(c.id, { language: e.target.value })} style={{ flex: 1 }}>
+                    {!TILES.some((t) => t.name === c.language) && <option value={c.language}>{c.language}</option>}
+                    {TILES.map((t) => (
+                      <option key={t.id} value={t.name}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </span>
               </label>
               {voice && first && <PlayButton label={`Hear ${c.name}'s first line`} get={() => sample(voice, first.text.replace(/\[[^\]]*\]/g, "").trim() || first.text)} />}
             </div>

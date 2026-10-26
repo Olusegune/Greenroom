@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Provider, useApp, type Tab } from "./ctx";
-import { Cast as CastIcon, Export as ExportIcon, Gear, Home as HomeIcon, Mark, Render, Script, Speaker, Voices as VoicesIcon } from "./icons";
+import { Cast as CastIcon, Export as ExportIcon, Gear, Home as HomeIcon, Layers, Mark, Render, Script, Speaker, Voices as VoicesIcon } from "./icons";
 import Cast from "./screens/Cast";
+import Engines from "./screens/Engines";
 import Export from "./screens/Export";
 import Home from "./screens/Home";
 import Lab from "./screens/Lab";
@@ -13,8 +14,8 @@ import Write from "./screens/Write";
 export default function App() {
   const [splash, setSplash] = useState<"show" | "fade" | "gone">("show");
   useEffect(() => {
-    const a = setTimeout(() => setSplash("fade"), 2200);
-    const b = setTimeout(() => setSplash("gone"), 2900);
+    const a = setTimeout(() => setSplash("fade"), 1400);
+    const b = setTimeout(() => setSplash("gone"), 1900);
     return () => (clearTimeout(a), clearTimeout(b));
   }, []);
   return (
@@ -39,7 +40,7 @@ function Shell() {
     </button>
   );
   const takes = project ? project.lines.filter((l) => l.takes.length > 0).length : 0;
-  const screens: Record<Tab, React.ReactNode> = { home: <Home />, write: <Write />, cast: <Cast />, perform: <Perform />, export: <Export />, voices: <Voices />, lab: <Lab />, settings: <Settings /> };
+  const screens: Record<Tab, React.ReactNode> = { home: <Home />, write: <Write />, cast: <Cast />, perform: <Perform />, export: <Export />, voices: <Voices />, engines: <Engines />, lab: <Lab />, settings: <Settings /> };
 
   return (
     <div className="shell">
@@ -60,6 +61,7 @@ function Shell() {
         )}
         <h3>Library</h3>
         <Item id="voices" label="Voices" icon={<VoicesIcon size={18} />} />
+        <Item id="engines" label="Engines" icon={<Layers size={18} />} />
         <Item id="lab" label="Voice lab" icon={<Speaker size={18} />} />
         <Item id="settings" label="Settings" icon={<Gear size={18} />} />
         <div className="rail-foot">

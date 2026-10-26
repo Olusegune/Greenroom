@@ -3,6 +3,7 @@
 
 mod eleven;
 mod kie;
+mod local;
 mod net;
 mod store;
 mod voicekiller;
@@ -11,6 +12,7 @@ use base64::Engine;
 use eleven::VoiceInfo;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Mutex;
 use std::time::Instant;
 use tauri::Manager;
 
@@ -113,7 +115,7 @@ struct ClipOut {
     ms: u128,
 }
 
-fn make_clip(req: ClipReq) -> Result<Vec<u8>, String> {
+fn make_clip(root: &std::path::Path, req: ClipReq) -> Result<Vec<u8>, String> {
     let text = req.text.trim();
     if text.is_empty() || text.len() > 9000 {
         return Err("The text is empty or too long.".into());
@@ -123,12 +125,24 @@ fn make_clip(req: ClipReq) -> Result<Vec<u8>, String> {
         "eleven-v4" => eleven()?.speech(&voice, eleven::MODEL_V4, text, req.speed),
         "eleven-tts" => eleven()?.speech(&voice, eleven::MODEL_V3, text, req.speed),
         "eleven-sfx" => eleven()?.sound(text, req.seconds.unwrap_or(3.0)),
+        "piper" => local::piper_speak(root, &voice, text, req.speed.unwrap_or(1.0), &local::RealRunner),
+        "local" => local::server_speak(&server_cfg(root), text, &voice, req.speed.unwrap_or(1.0)),
         p @ ("voicekiller" | "voicekiller-clone") => voicekiller_client()?.speak(text, &voice, req.instructions.as_deref(), p == "voicekiller-clone"),
         p @ ("kie-tts" | "kie-dialogue" | "kie-sfx") => {
             let c = kie::Client::new(kie::BASE, &get_key("kie")?);
             let fetch = |u: &str| net::download(u, net::MAX_AUDIO);
             match p {
-                "kie-tts" => c.run("elevenlabs/text-to-speech-turbo-2-5", serde_json::json!({ "text": text, "voice": kie::DEFAULT_VOICE }), &fetch),
+                "kie-tts" => {
+                    let v = if voice.is_empty() { kie::DEFAULT_VOICE.to_string() } else { voice.clone() };
+                    if !eleven::valid_id(&v) {
+                        return Err("That Kie voice is not valid.".into());
+                    }
+                    let mut input = serde_json::json!({ "text": text, "voice": v });
+                    if let Some(sp) = req.speed.filter(|x| (x - 1.0).abs() > 0.001) {
+                        input["speed"] = serde_json::json!(sp.clamp(0.7, 1.2));
+                    }
+                    c.run("elevenlabs/text-to-speech-turbo-2-5", input, &fetch)
+                }
                 "kie-dialogue" => c.run("elevenlabs/text-to-dialogue-v3", serde_json::json!({ "dialogue": [{ "text": text, "voice": kie::DEFAULT_VOICE }] }), &fetch),
                 _ => c.run("elevenlabs/sound-effect-v2", serde_json::json!({ "text": text }), &fetch),
             }
@@ -138,10 +152,11 @@ fn make_clip(req: ClipReq) -> Result<Vec<u8>, String> {
 }
 
 #[tauri::command]
-async fn run_clip(req: ClipReq) -> Result<ClipOut, String> {
+async fn run_clip(app: tauri::AppHandle, req: ClipReq) -> Result<ClipOut, String> {
+    let dir = root(&app)?;
     blocking(move || {
         let t = Instant::now();
-        let bytes = make_clip(req)?;
+        let bytes = make_clip(&dir, req)?;
         if bytes.len() < 200 {
             return Err("The provider returned an empty clip.".to_string());
         }
@@ -273,6 +288,94 @@ fn save_report(app: tauri::AppHandle, text: String) -> Result<String, String> {
     Ok(file.to_string_lossy().into_owned())
 }
 
+// ---- engines: local server settings, Piper ---------------------------------------------------------------------
+
+fn server_cfg(root: &std::path::Path) -> local::ServerCfg {
+    std::fs::read_to_string(root.join("engines.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| serde_json::from_value(v["localServer"].clone()).ok())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+fn engines_load(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(std::fs::read_to_string(root(&app)?.join("engines.json")).unwrap_or_else(|_| "{}".into()))
+}
+
+#[tauri::command]
+fn engines_save(app: tauri::AppHandle, json: String) -> Result<(), String> {
+    if json.len() > 64 * 1024 || !serde_json::from_str::<serde_json::Value>(&json).map(|v| v.is_object()).unwrap_or(false) {
+        return Err("The engine settings were not valid.".into());
+    }
+    store::atomic_write(&root(&app)?.join("engines.json"), json.as_bytes())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PiperStatus {
+    installed: bool,
+    voices: Vec<String>,
+}
+
+#[tauri::command]
+fn piper_status(app: tauri::AppHandle) -> Result<PiperStatus, String> {
+    let r = root(&app)?;
+    Ok(PiperStatus { installed: local::piper_installed(&r), voices: local::installed_voices(&r) })
+}
+
+fn fetcher(url: &str, max: u64) -> Result<Vec<u8>, String> {
+    net::download(url, max)
+}
+
+#[tauri::command]
+async fn piper_install(app: tauri::AppHandle) -> Result<(), String> {
+    let r = root(&app)?;
+    blocking(move || local::install_piper(&r, local::PIPER_URL, local::PIPER_SIZE, local::PIPER_SHA256, &fetcher)).await
+}
+
+static CATALOG: Mutex<Option<Vec<local::PiperVoice>>> = Mutex::new(None);
+
+fn catalog() -> Result<Vec<local::PiperVoice>, String> {
+    if let Some(c) = CATALOG.lock().map_err(|_| "busy")?.clone() {
+        return Ok(c);
+    }
+    let bytes = net::download(local::CATALOG_URL, 8 << 20)?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| "The voice catalogue was not understood.".to_string())?;
+    let list = local::parse_catalog(&v);
+    if list.is_empty() {
+        return Err("The voice catalogue was empty.".into());
+    }
+    *CATALOG.lock().map_err(|_| "busy")? = Some(list.clone());
+    Ok(list)
+}
+
+#[tauri::command]
+async fn piper_catalog() -> Result<Vec<local::PiperVoice>, String> {
+    blocking(catalog).await
+}
+
+#[tauri::command]
+async fn piper_install_voice(app: tauri::AppHandle, key: String) -> Result<(), String> {
+    let r = root(&app)?;
+    blocking(move || {
+        let v = catalog()?.into_iter().find(|v| v.key == key).ok_or("That voice is not in the catalogue.")?;
+        local::install_voice(&r, &v, local::VOICES_BASE, &fetcher)
+    })
+    .await
+}
+
+#[tauri::command]
+fn piper_remove_voice(app: tauri::AppHandle, key: String) -> Result<(), String> {
+    local::remove_voice(&root(&app)?, &key)
+}
+
+#[tauri::command]
+async fn local_voices(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    let cfg = server_cfg(&root(&app)?);
+    blocking(move || local::server_voices(&cfg)).await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -280,7 +383,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             key_status, set_key, clear_key, run_clip, voices_mine, voices_voicekiller, voices_shared, voice_add_shared, voice_design, voice_design_save, voice_clone,
             voice_delete, preview_fetch, project_list, project_load, project_save, take_write, take_read, export_write, library_load, library_save,
-            save_report
+            save_report, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
         ])
         .run(tauri::generate_context!())
         .expect("error while running Greenroom");

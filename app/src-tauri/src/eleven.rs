@@ -142,7 +142,7 @@ impl Client {
         if !valid_id(owner) || !valid_id(voice) || clean_name(name).is_none() {
             return Err("That voice or name is not valid.".into());
         }
-        let v = read_json(self.post(&format!("/v1/voices/add/{owner}/{voice}"), &json!({ "new_name": clean_name(name) }))?, 1 << 20)?;
+        let v = read_json(self.post(&format!("/v1/voices/add/{owner}/{voice}"), &json!({ "new_name": clean_name(name) })).map_err(plan_hint)?, 1 << 20)?;
         v["voice_id"].as_str().filter(|i| valid_id(i)).map(str::to_string).ok_or_else(|| "ElevenLabs did not confirm the voice.".into())
     }
 
@@ -182,7 +182,7 @@ impl Client {
         if !valid_id(generated) || clean_name(name).is_none() || !(20..=1000).contains(&d.chars().count()) {
             return Err("The name or description is not valid.".into());
         }
-        let v = read_json(self.post("/v1/text-to-voice", &json!({ "voice_name": clean_name(name), "voice_description": d, "generated_voice_id": generated }))?, 1 << 20)?;
+        let v = read_json(self.post("/v1/text-to-voice", &json!({ "voice_name": clean_name(name), "voice_description": d, "generated_voice_id": generated })).map_err(plan_hint)?, 1 << 20)?;
         v["voice_id"].as_str().filter(|i| valid_id(i)).map(str::to_string).ok_or_else(|| "ElevenLabs did not confirm the voice.".into())
     }
 
@@ -202,7 +202,7 @@ impl Client {
         body.extend(format!("--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"{fname}\"\r\nContent-Type: {mime}\r\n\r\n").as_bytes());
         body.extend(audio);
         body.extend(format!("\r\n--{boundary}--\r\n").as_bytes());
-        let r = finish(self.agent.post(&format!("{}/v1/voices/add", self.base)).set("xi-api-key", &self.key).set("content-type", &format!("multipart/form-data; boundary={boundary}")).send_bytes(&body))?;
+        let r = finish(self.agent.post(&format!("{}/v1/voices/add", self.base)).set("xi-api-key", &self.key).set("content-type", &format!("multipart/form-data; boundary={boundary}")).send_bytes(&body)).map_err(plan_hint)?;
         let v = read_json(r, 1 << 20)?;
         v["voice_id"].as_str().filter(|i| valid_id(i)).map(str::to_string).ok_or_else(|| "ElevenLabs did not confirm the voice.".into())
     }
@@ -213,6 +213,17 @@ impl Client {
         }
         finish(self.agent.delete(&format!("{}/v1/voices/{id}", self.base)).set("xi-api-key", &self.key).call()).map(|_| ())
     }
+}
+
+/// ElevenLabs refuses saving, adding or cloning voices on plans that do not include them, and each plan caps custom
+/// voices. Their reply is terse, so say plainly what it means and what still works.
+pub fn plan_hint(msg: String) -> String {
+    let m = msg.to_lowercase();
+    let limited = ["upgrade", "subscription", "plan", "tier", "quota", "limit", "payment", "not accept the key", "can_not", "not_allowed"].iter().any(|k| m.contains(k));
+    if !limited {
+        return msg;
+    }
+    format!("Your ElevenLabs plan does not allow this. Saving, adding or cloning voices usually needs a paid plan, and each plan caps how many custom voices you can keep. You can upgrade at elevenlabs.io, or use a premade voice, a VoiceKiller or Kie voice, or an offline Piper voice instead. ElevenLabs said: {}", msg.chars().take(200).collect::<String>())
 }
 
 pub fn clean_name(n: &str) -> Option<String> {
@@ -392,6 +403,19 @@ mod tests {
         drop(hits);
         assert!(c.clone_voice("Mum", "a.wav", "audio/wav", &[0u8; 10]).is_err());
         assert!(c.clone_voice("   ", "a.wav", "audio/wav", &vec![0u8; 2000]).is_err());
+    }
+
+    #[test]
+    fn plan_limits_are_explained_in_plain_words() {
+        let f = start(Box::new(|_| (402, br#"{"detail":{"status":"payment_required","message":"Please upgrade your subscription to use this."}}"#.to_vec())));
+        let c = Client::new(&f.base, "K");
+        let e = c.save_design("gen1", "Elder", "An older Nigerian man, warm and gravelly, calm and slow").unwrap_err();
+        assert!(e.contains("plan does not allow this") && e.contains("Piper") && e.contains("upgrade your subscription"));
+        let e2 = c.add_shared("own1", "v9", "Tunde").unwrap_err();
+        assert!(e2.contains("plan does not allow this"));
+        // an unrelated failure is passed through untouched
+        let g = start(Box::new(|_| (500, b"{}".to_vec())));
+        assert!(!Client::new(&g.base, "K").add_shared("own1", "v9", "T").unwrap_err().contains("plan does not allow"));
     }
 
     #[test]

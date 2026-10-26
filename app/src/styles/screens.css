@@ -15,3 +15,8 @@
 .voice-card .meta { display: flex; flex-wrap: wrap; gap: 6px; }
 .lang-note { color: var(--text-2); font-size: var(--fs-sm); }
 .lab-line { margin: 6px 0 2px; font-style: italic; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: var(--s2); }
+.tile { height: 44px; justify-content: flex-start; gap: var(--s3); background: var(--surface-2); border: 1px solid var(--line); text-align: left; font-size: var(--fs-sm); }
+.tile[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-wash); color: var(--accent-text); }
+.flag { border-radius: 2px; box-shadow: 0 0 0 1px var(--line-strong); flex: none; }
+.flag-ph { display: inline-block; border-radius: 2px; background: var(--surface-4); flex: none; }

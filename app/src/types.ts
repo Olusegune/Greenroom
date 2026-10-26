@@ -1,3 +1,5 @@
+import type { Engine } from "./engines";
+
 export interface Character {
   id: string;
   name: string;
@@ -9,7 +11,7 @@ export interface Character {
 export interface Take {
   id: string;
   at: string;
-  model: "eleven_v4" | "eleven_v3" | "voicekiller";
+  model: "eleven_v4" | "eleven_v3" | "voicekiller" | "kie" | "piper" | "local";
   ext: "mp3" | "wav";
   voiceId: string;
   /** Exactly what was sent, tags included, so a take can always be explained. */
@@ -64,10 +66,10 @@ export interface Project {
 }
 
 export interface VoiceEntry {
-  /** The ElevenLabs voice id, or the voice name for VoiceKiller. */
+  /** The voice id: an ElevenLabs or Kie id, a VoiceKiller or local-server voice name, or a Piper voice key. */
   id: string;
   name: string;
-  provider: "elevenlabs" | "voicekiller";
+  provider: Engine;
   /** A voice cloned on voicekiller.com uses their clone endpoint. */
   vkClone?: boolean;
   source: "designed" | "cloned" | "library" | "account";

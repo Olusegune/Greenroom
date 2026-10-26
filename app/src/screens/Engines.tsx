@@ -1,0 +1,223 @@
+import { useEffect, useState } from "react";
+import { api, type PiperStatus } from "../api";
+import { useApp } from "../ctx";
+import { ENGINES, type ElevenModel } from "../engines";
+import { Note, useBusy } from "../ui";
+
+export default function Engines() {
+  const { keys, engines, saveEngines, go } = useApp();
+  return (
+    <section>
+      <div>
+        <h1>Engines</h1>
+        <p className="lede">An engine is where a voice comes from. Each voice belongs to one engine, so choosing a voice in Cast chooses the engine. Set up the ones you want here.</p>
+      </div>
+
+      <div className="card stack">
+        <div className="row between">
+          <h2>{ENGINES.elevenlabs.label}</h2>
+          <span className={keys.elevenlabs ? "badge ok" : "badge"}>{keys.elevenlabs ? "Key saved" : "Needs a key"}</span>
+        </div>
+        <p className="muted small">{ENGINES.elevenlabs.blurb}</p>
+        <label className="field" style={{ maxWidth: 320 }}>
+          Speech model
+          <select value={engines.elevenModel} onChange={(e) => saveEngines({ ...engines, elevenModel: e.target.value as ElevenModel })}>
+            <option value="eleven_v4">Eleven v4 (newest, best)</option>
+            <option value="eleven_v3">Eleven v3</option>
+          </select>
+        </label>
+        {!keys.elevenlabs && (
+          <div>
+            <button onClick={() => go("settings")}>Add the key in Settings</button>
+          </div>
+        )}
+      </div>
+
+      <Simple title={ENGINES.voicekiller.label} ready={keys.voicekiller} blurb={ENGINES.voicekiller.blurb} extra={<VkClone />} />
+      <Simple title={ENGINES.kie.label} ready={keys.kie} blurb={ENGINES.kie.blurb} />
+      <Piper />
+      <LocalServer />
+    </section>
+  );
+}
+
+function Simple({ title, ready, blurb, extra }: { title: string; ready: boolean; blurb: string; extra?: React.ReactNode }) {
+  const { go } = useApp();
+  return (
+    <div className="card stack">
+      <div className="row between">
+        <h2>{title}</h2>
+        <span className={ready ? "badge ok" : "badge"}>{ready ? "Key saved" : "Needs a key"}</span>
+      </div>
+      <p className="muted small">{blurb}</p>
+      {!ready && (
+        <div>
+          <button onClick={() => go("settings")}>Add the key in Settings</button>
+        </div>
+      )}
+      {ready && extra}
+    </div>
+  );
+}
+
+function VkClone() {
+  const { library, saveLibrary, toast } = useApp();
+  const [name, setName] = useState("");
+  const register = () => {
+    const n = name.trim();
+    if (!n) return;
+    if (library.some((v) => v.id === n && v.provider === "voicekiller")) return toast(`${n} is already in your library.`);
+    saveLibrary((l) => [...l, { id: n, name: n, provider: "voicekiller", vkClone: true, source: "cloned", language: "", accent: "", gender: "", notes: "Cloned on voicekiller.com", createdAt: new Date().toISOString() }]);
+    toast(`${n} registered.`);
+    setName("");
+  };
+  return (
+    <div className="stack">
+      <h3>A voice you cloned on voicekiller.com</h3>
+      <p className="muted small">Clones cannot be created through their API, so register one here by the exact name you gave it on their website.</p>
+      <div className="row">
+        <input type="text" aria-label="Clone name on VoiceKiller" placeholder="Exact name of the clone" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1 }} />
+        <button disabled={!name.trim()} onClick={register}>
+          Register clone
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Piper() {
+  const { go, confirmSpend, toast } = useApp();
+  const { busy, run } = useBusy();
+  const [st, setSt] = useState<PiperStatus | null>(null);
+  const refresh = () => void api.piperStatus().then(setSt).catch(() => setSt({ installed: false, voices: [] }));
+  useEffect(refresh, []);
+
+  const install = async () => {
+    const ok = await confirmSpend({ title: "Install Piper?", lines: ["Downloads the Piper program (22 MB) from its official GitHub release", "Greenroom checks it matches the version it was tested with before using it", "Nothing is sent from your projects"], download: true });
+    if (!ok) return;
+    await run(async () => {
+      try {
+        await api.piperInstall();
+        toast("Piper installed.");
+        refresh();
+      } catch (e) {
+        toast((e as Error).message, true);
+      }
+    });
+  };
+  const remove = async (k: string) => {
+    try {
+      await api.piperRemoveVoice(k);
+      refresh();
+    } catch (e) {
+      toast((e as Error).message, true);
+    }
+  };
+
+  return (
+    <div className="card stack">
+      <div className="row between">
+        <h2>{ENGINES.piper.label}</h2>
+        <span className={st?.installed ? "badge ok" : "badge"}>{st?.installed ? "Installed" : "Not installed"}</span>
+      </div>
+      <p className="muted small">{ENGINES.piper.blurb} Each voice has its own licence, shown in its model card on the Piper voices page.</p>
+      <div className="row wrap">
+        {!st?.installed && (
+          <button className="primary" disabled={busy} onClick={() => void install()}>
+            {busy ? "Installing…" : "Install Piper (22 MB)"}
+          </button>
+        )}
+        <button onClick={() => go("voices")}>Find Piper voices</button>
+      </div>
+      {st && st.voices.length > 0 && (
+        <div className="stack">
+          <h3>Downloaded voices</h3>
+          {st.voices.map((k) => (
+            <div key={k} className="row between">
+              <code>{k}</code>
+              <button className="sm ghost danger" onClick={() => void remove(k)}>
+                Delete files
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LocalServer() {
+  const { engines, saveEngines, library, saveLibrary, toast } = useApp();
+  const { busy, run } = useBusy();
+  const [cfg, setCfg] = useState(engines.localServer);
+  const [voices, setVoices] = useState<string[] | null>(null);
+  const [typed, setTyped] = useState("");
+  useEffect(() => setCfg(engines.localServer), [engines.localServer]);
+
+  const add = (name: string) => {
+    const n = name.trim();
+    if (!n) return;
+    if (library.some((v) => v.id === n && v.provider === "local")) return toast(`${n} is already in your library.`);
+    saveLibrary((l) => [...l, { id: n, name: n, provider: "local", source: "library", language: "", accent: "", gender: "", notes: "From my local server", createdAt: new Date().toISOString() }]);
+    toast(`${n} added.`);
+  };
+  const test = () =>
+    run(async () => {
+      saveEngines({ ...engines, localServer: cfg });
+      try {
+        setVoices(await api.localVoices());
+      } catch (e) {
+        setVoices(null);
+        toast((e as Error).message, true);
+      }
+    });
+
+  return (
+    <div className="card stack">
+      <div className="row between">
+        <h2>{ENGINES.local.label}</h2>
+        <span className="badge">Optional</span>
+      </div>
+      <p className="muted small">{ENGINES.local.blurb} It must speak the OpenAI-style speech API (<code>/v1/audio/speech</code>) and run on this computer. For privacy, only 127.0.0.1 and localhost addresses are accepted.</p>
+      <div className="row wrap">
+        <label className="field" style={{ flex: 2, minWidth: 220 }}>
+          Address
+          <input type="text" value={cfg.url} onChange={(e) => setCfg({ ...cfg, url: e.target.value })} placeholder="http://127.0.0.1:8880" />
+        </label>
+        <label className="field" style={{ flex: 1, minWidth: 140 }}>
+          Model name
+          <input type="text" value={cfg.model} onChange={(e) => setCfg({ ...cfg, model: e.target.value })} placeholder="kokoro" />
+        </label>
+        <div style={{ alignSelf: "end" }}>
+          <button onClick={() => void test()} disabled={busy}>
+            {busy ? "Checking…" : "Save and check"}
+          </button>
+        </div>
+      </div>
+      {voices && (
+        <div className="stack">
+          <Note kind="ok">The server answered with {voices.length} voice{voices.length === 1 ? "" : "s"}.</Note>
+          <div className="chips">
+            {voices.slice(0, 60).map((v) => (
+              <button key={v} className="chip" aria-pressed="false" onClick={() => add(v)}>
+                + {v}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="row">
+        <input type="text" aria-label="Add a voice by name" placeholder="Or type a voice name to add" value={typed} onChange={(e) => setTyped(e.target.value)} style={{ flex: 1 }} />
+        <button
+          disabled={!typed.trim()}
+          onClick={() => {
+            add(typed);
+            setTyped("");
+          }}
+        >
+          Add voice
+        </button>
+      </div>
+    </div>
+  );
+}

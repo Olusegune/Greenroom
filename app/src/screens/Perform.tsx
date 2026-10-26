@@ -2,7 +2,8 @@ import { useRef, useState } from "react";
 import { audioPlan, previewScene } from "../preview";
 import { useApp } from "../ctx";
 import { chosenTake, composeText, EMOTIONS, SOUNDS, toggleIn, vkUnsupported } from "../direct";
-import { makeSound, makeTake, plan, type Model } from "../generate";
+import { ENGINES } from "../engines";
+import { makeSound, makeTake, modelLabel, plan, type Model } from "../generate";
 import { Plus, Play, Stop, Trash } from "../icons";
 import { stopPlayback, takeUrl } from "../media";
 import { uid } from "../script";
@@ -10,8 +11,9 @@ import type { Character, Line, VoiceEntry } from "../types";
 import { Empty, Note, PlayButton } from "../ui";
 
 export default function Perform() {
-  const { project, edit, library, confirmSpend, toast, go } = useApp();
-  const [model, setModel] = useState<Model>("eleven_v4");
+  const { project, edit, library, confirmSpend, toast, go, engines, saveEngines } = useApp();
+  const model: Model = engines.elevenModel;
+  const setModel = (m: Model) => saveEngines({ ...engines, elevenModel: m });
   const [running, setRunning] = useState<{ done: number; total: number } | null>(null);
   const [playing, setPlaying] = useState(false);
   const stop = useRef(false);
@@ -33,9 +35,12 @@ export default function Perform() {
       return false;
     }
     const { chars } = spend([line]);
-    const extra: string[] = voice.provider === "voicekiller" && vkUnsupported(line).length ? [`VoiceKiller cannot make: ${vkUnsupported(line).join(", ")}. Those will be left out.`] : [];
-    const ok = await confirmSpend({ title: count > 1 ? `Make ${count} takes?` : "Make a take?", lines: [`${chars * count} characters (${count} take${count > 1 ? "s" : ""})`, `Voice: ${voice.name}`, ...extra], skipKey: count > 1 ? undefined : "take" });
-    if (!ok) return false;
+    const e = ENGINES[voice.provider];
+    const extra: string[] = !e.tags && vkUnsupported(line).length ? [`${e.label} cannot make: ${vkUnsupported(line).join(", ")}. Those will be left out.`] : [];
+    if (!e.local) {
+      const ok = await confirmSpend({ title: count > 1 ? `Make ${count} takes?` : "Make a take?", lines: [`${chars * count} characters (${count} take${count > 1 ? "s" : ""})`, `Voice: ${voice.name}`, ...extra], skipKey: count > 1 ? undefined : "take" });
+      if (!ok) return false;
+    }
     try {
       for (let i = 0; i < count; i++) {
         const t = await makeTake(project.id, line, voice, model);
@@ -51,9 +56,12 @@ export default function Perform() {
   const makeAll = async () => {
     const todo = project.lines.filter((l) => l.takes.length === 0 && voiceOf(l));
     if (todo.length === 0) return toast("Every line already has a take.");
-    const s = spend(todo);
-    const ok = await confirmSpend({ title: "Make all the missing takes?", lines: [`${todo.length} lines, ${s.chars} characters`, `Voices: ${s.voices}`, "One take per line. You can make more later."] });
-    if (!ok) return;
+    const paid = todo.filter((l) => !ENGINES[voiceOf(l)!.provider].local);
+    if (paid.length > 0) {
+      const s = spend(paid);
+      const ok = await confirmSpend({ title: "Make all the missing takes?", lines: [`${paid.length} lines, ${s.chars} characters${paid.length < todo.length ? ` (${todo.length - paid.length} more run offline, free)` : ""}`, `Voices: ${s.voices}`, "One take per line. You can make more later."] });
+      if (!ok) return;
+    }
     stop.current = false;
     setRunning({ done: 0, total: todo.length });
     for (let i = 0; i < todo.length; i++) {
@@ -115,8 +123,8 @@ export default function Perform() {
           <h1>Perform</h1>
           <p className="lede">Pick how each line is delivered, add sounds like laughs or coughs, then make takes and choose the best. Nothing is generated until you confirm.</p>
         </div>
-        <label className="field" style={{ minWidth: 190 }}>
-          Speech model
+        <label className="field" style={{ minWidth: 210 }}>
+          ElevenLabs model
           <select value={model} onChange={(e) => setModel(e.target.value as Model)}>
             <option value="eleven_v4">Eleven v4 (newest, best)</option>
             <option value="eleven_v3">Eleven v3</option>
@@ -182,7 +190,7 @@ function LineCard({ line, index, character, voice, model, patch, make }: { line:
   const [open, setOpen] = useState(false);
   const [snd, setSnd] = useState({ prompt: "", placement: "after" as "before" | "after", seconds: 2 });
   const d = line.direction;
-  const vk = voice?.provider === "voicekiller";
+  const noTags = !!voice && !ENGINES[voice.provider].tags;
   const sent = voice ? plan(line, voice, model).text : composeText(line);
   const chosen = chosenTake(line);
 
@@ -231,12 +239,12 @@ function LineCard({ line, index, character, voice, model, patch, make }: { line:
       </div>
       <div className="chips" role="group" aria-label="Sounds in the line">
         {SOUNDS.map((s) => (
-          <button key={s.tag} className="chip" aria-pressed={d.sounds.includes(s.tag)} title={vk ? "VoiceKiller cannot make this" : s.verified ? "Heard and approved" : "Not yet listened to"} onClick={() => patch((l) => ({ ...l, direction: { ...l.direction, sounds: toggleIn(l.direction.sounds, s.tag) } }))}>
+          <button key={s.tag} className="chip" aria-pressed={d.sounds.includes(s.tag)} title={noTags ? `${ENGINES[voice!.provider].label} cannot make this` : s.verified ? "Heard and approved" : "Not yet listened to"} onClick={() => patch((l) => ({ ...l, direction: { ...l.direction, sounds: toggleIn(l.direction.sounds, s.tag) } }))}>
             {s.label}
           </button>
         ))}
       </div>
-      {vk && vkUnsupported(line).length > 0 && <Note kind="warn">VoiceKiller cannot make {vkUnsupported(line).join(", ")}. Pick an ElevenLabs voice, or add a sound clip below.</Note>}
+      {noTags && vkUnsupported(line).length > 0 && <Note kind="warn">{ENGINES[voice!.provider].label} cannot make {vkUnsupported(line).join(", ")}. Pick an ElevenLabs voice, or add a sound clip below.</Note>}
       <div className="row wrap">
         <label className="row small muted">
           Speed
@@ -256,7 +264,7 @@ function LineCard({ line, index, character, voice, model, patch, make }: { line:
         <div key={t.id} className={t.id === chosen?.id ? "take chosen" : "take"}>
           <PlayButton label={`Take ${i + 1}`} get={() => takeUrl(project!.id, t.id)} />
           <span className="muted small num">{t.seconds.toFixed(1)}s</span>
-          <span className="badge">{t.model.replace("eleven_", "Eleven ")}</span>
+          <span className="badge">{modelLabel(t.model)}</span>
           <span className="spacer" />
           <label className="row small">
             <input type="radio" name={`use-${line.id}`} checked={t.id === chosen?.id} onChange={() => patch((l) => ({ ...l, chosen: t.id }))} /> Use this one

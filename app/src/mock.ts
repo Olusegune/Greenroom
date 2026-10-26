@@ -3,13 +3,23 @@
 
 import { encodeWav, toBase64 } from "./audio";
 import type { Project, VoiceEntry, VoiceInfo } from "./types";
-import type { Api, ClipReq, KeyName } from "./api";
+import type { Api, ClipReq, KeyName, PiperVoice } from "./api";
+import type { EnginesCfg } from "./engines";
 
 const wait = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 const keys = { elevenlabs: true, kie: true, voicekiller: true } as Record<string, boolean>;
 const projects = new Map<string, Project>();
 const takes = new Map<string, { audioB64: string; mime: string }>();
 let library: VoiceEntry[] = [];
+let engines: Partial<EnginesCfg> = {};
+let piperInstalled = false;
+const piperVoices = new Set<string>();
+const PIPER: PiperVoice[] = [
+  { key: "en_GB-alba-medium", name: "alba", code: "en_GB", family: "en", language: "English", country: "Great Britain", quality: "medium", speakers: 1, sizeMb: 60.3 },
+  { key: "en_US-lessac-medium", name: "lessac", code: "en_US", family: "en", language: "English", country: "United States", quality: "medium", speakers: 1, sizeMb: 60.3 },
+  { key: "fr_FR-siwis-medium", name: "siwis", code: "fr_FR", family: "fr", language: "French", country: "France", quality: "medium", speakers: 1, sizeMb: 60.3 },
+  { key: "sw_CD-lanfrica-medium", name: "lanfrica", code: "sw_CD", family: "sw", language: "Swahili", country: "Congo", quality: "medium", speakers: 1, sizeMb: 60.3 },
+];
 
 function tone(seconds: number, hz: number): string {
   const rate = 22050;
@@ -71,5 +81,13 @@ export const mock: Api = {
   exportWrite: async (_p, folder, filename) => `C:\\Users\\you\\Documents\\Greenroom\\projects\\demo\\exports\\${folder ? folder + "\\" : ""}${filename}`,
   libraryLoad: async () => structuredClone(library),
   librarySave: async (v) => void (library = structuredClone(v)),
+  enginesLoad: async () => structuredClone(engines),
+  enginesSave: async (c) => void (engines = structuredClone(c)),
+  piperStatus: async () => ({ installed: piperInstalled, voices: [...piperVoices] }),
+  piperInstall: async () => (await wait(900), void (piperInstalled = true)),
+  piperCatalog: async () => (await wait(), PIPER),
+  piperInstallVoice: async (k) => (await wait(900), void piperVoices.add(k)),
+  piperRemoveVoice: async (k) => void piperVoices.delete(k),
+  localVoices: async () => (await wait(), ["af_bella", "am_adam"]),
   saveReport: async () => "C:\\Users\\you\\Documents\\Greenroom\\listening-report.md",
 };

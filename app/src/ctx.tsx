@@ -2,14 +2,17 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api, type KeyStatus } from "./api";
 import { newProject, type Project, type VoiceEntry } from "./types";
 import { uid } from "./script";
+import { DEFAULT_ENGINES_CFG, type EnginesCfg } from "./engines";
 
-export type Tab = "home" | "write" | "cast" | "perform" | "export" | "voices" | "lab" | "settings";
+export type Tab = "home" | "write" | "cast" | "perform" | "export" | "voices" | "engines" | "lab" | "settings";
 
 export interface SpendAsk {
   title: string;
   lines: string[];
   /** When set, the sheet offers "do not ask again this session" for this kind of single action. */
   skipKey?: string;
+  /** A file download rather than a paid call: different words, no credits mentioned. */
+  download?: boolean;
 }
 
 interface Ctx {
@@ -17,6 +20,8 @@ interface Ctx {
   go: (t: Tab) => void;
   keys: KeyStatus;
   refreshKeys: () => void;
+  engines: EnginesCfg;
+  saveEngines: (c: EnginesCfg) => void;
   library: VoiceEntry[];
   saveLibrary: (next: VoiceEntry[] | ((current: VoiceEntry[]) => VoiceEntry[])) => void;
   project: Project | null;
@@ -40,6 +45,7 @@ export function Provider({ children }: { children: ReactNode }) {
   const [tab, setTab] = useState<Tab>("home");
   const [keys, setKeys] = useState<KeyStatus>({ elevenlabs: false, kie: false, voicekiller: false });
   const [library, setLibrary] = useState<VoiceEntry[]>([]);
+  const [engines, setEngines] = useState<EnginesCfg>(DEFAULT_ENGINES_CFG);
   const [project, setProject] = useState<Project | null>(null);
   const [saving, setSaving] = useState<Ctx["saving"]>("idle");
   const [note, setNote] = useState<{ text: string; bad: boolean } | null>(null);
@@ -52,10 +58,20 @@ export function Provider({ children }: { children: ReactNode }) {
   useEffect(refreshKeys, [refreshKeys]);
   useEffect(() => void api.libraryLoad().then((l) => ((libRef.current = l), setLibrary(l))).catch(() => undefined), []);
 
+  useEffect(() => void api.enginesLoad().then((c) => setEngines({ ...DEFAULT_ENGINES_CFG, ...c, localServer: { ...DEFAULT_ENGINES_CFG.localServer, ...(c.localServer ?? {}) } })).catch(() => undefined), []);
+
   const toast = useCallback((text: string, bad = false) => {
     setNote({ text, bad });
     setTimeout(() => setNote((n) => (n?.text === text ? null : n)), bad ? 8000 : 3500);
   }, []);
+
+  const saveEngines = useCallback(
+    (c: EnginesCfg) => {
+      setEngines(c);
+      api.enginesSave(c).catch((e: Error) => toast(e.message, true));
+    },
+    [toast],
+  );
 
   const saveLibrary = useCallback(
     (next: VoiceEntry[] | ((current: VoiceEntry[]) => VoiceEntry[])) => {
@@ -129,8 +145,8 @@ export function Provider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<Ctx>(
-    () => ({ tab, go: setTab, keys, refreshKeys, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, toast, confirmSpend }),
-    [tab, keys, refreshKeys, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, toast, confirmSpend],
+    () => ({ tab, go: setTab, keys, refreshKeys, engines, saveEngines, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, toast, confirmSpend }),
+    [tab, keys, refreshKeys, engines, saveEngines, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, toast, confirmSpend],
   );
 
   return (
@@ -157,7 +173,7 @@ function SpendSheet({ ask, onDone }: { ask: SpendAsk; onDone: (ok: boolean, skip
     <div className="scrim" role="presentation">
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="spend-t">
         <h2 id="spend-t">{ask.title}</h2>
-        <p className="muted">This sends text to the provider and uses credits on your own account. Greenroom cannot see your price, so check your plan if unsure.</p>
+        <p className="muted">{ask.download ? "This downloads files to this computer. Nothing is sent from your project." : "This sends text to the provider and uses credits on your own account. Greenroom cannot see your price, so check your plan if unsure."}</p>
         <ul>
           {ask.lines.map((l) => (
             <li key={l}>{l}</li>
@@ -171,7 +187,7 @@ function SpendSheet({ ask, onDone }: { ask: SpendAsk; onDone: (ok: boolean, skip
         <div className="row end" style={{ marginTop: 16 }}>
           <button onClick={() => onDone(false, false)}>Cancel</button>
           <button className="primary" autoFocus onClick={() => onDone(true, skip)}>
-            Go ahead and use credits
+            {ask.download ? "Download" : "Go ahead and use credits"}
           </button>
         </div>
       </div>

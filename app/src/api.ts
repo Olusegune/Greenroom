@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Project, VoiceEntry, VoiceInfo } from "./types";
 import { mock } from "./mock";
+import type { EnginesCfg } from "./engines";
 
 export type KeyName = "elevenlabs" | "kie" | "voicekiller" | "voicekiller-userid";
 export type KeyStatus = { elevenlabs: boolean; kie: boolean; voicekiller: boolean };
-export type Provider = "eleven-v4" | "eleven-tts" | "eleven-sfx" | "voicekiller" | "voicekiller-clone" | "kie-tts" | "kie-dialogue" | "kie-sfx";
+export type Provider = "eleven-v4" | "eleven-tts" | "eleven-sfx" | "voicekiller" | "voicekiller-clone" | "kie-tts" | "kie-dialogue" | "kie-sfx" | "piper" | "local";
 
 export interface ClipOut {
   audioB64: string;
@@ -27,6 +28,21 @@ export interface DesignPreview {
   generatedVoiceId: string;
   audioB64: string;
   seconds: number;
+}
+export interface PiperVoice {
+  key: string;
+  name: string;
+  code: string;
+  family: string;
+  language: string;
+  country: string;
+  quality: string;
+  speakers: number;
+  sizeMb: number;
+}
+export interface PiperStatus {
+  installed: boolean;
+  voices: string[];
 }
 export interface ProjectInfo {
   id: string;
@@ -68,6 +84,14 @@ const real = {
   libraryLoad: async () => JSON.parse(await call<string>("library_load")) as VoiceEntry[],
   librarySave: (v: VoiceEntry[]) => call<void>("library_save", { json: JSON.stringify(v) }),
   saveReport: (text: string) => call<string>("save_report", { text }),
+  enginesLoad: async () => JSON.parse(await call<string>("engines_load")) as Partial<EnginesCfg>,
+  enginesSave: (c: EnginesCfg) => call<void>("engines_save", { json: JSON.stringify(c) }),
+  piperStatus: () => call<PiperStatus>("piper_status"),
+  piperInstall: () => call<void>("piper_install"),
+  piperCatalog: () => call<PiperVoice[]>("piper_catalog"),
+  piperInstallVoice: (key: string) => call<void>("piper_install_voice", { key }),
+  piperRemoveVoice: (key: string) => call<void>("piper_remove_voice", { key }),
+  localVoices: () => call<string[]>("local_voices"),
 };
 
 export type Api = typeof real;

@@ -1,18 +1,21 @@
-// Making one take: pick the provider from the voice, shape the text for it, save the audio, remember its length.
+// Making one take: pick the engine from the voice, shape the text for it, save the audio, remember its length.
 
 import { api, type Provider } from "./api";
 import { composeText, stripTags, vkInstructions } from "./direct";
+import { ENGINES, providerFor, type ElevenModel } from "./engines";
 import { remember } from "./media";
 import { uid } from "./script";
 import type { Line, Take, VoiceEntry } from "./types";
 
-export type Model = "eleven_v4" | "eleven_v3";
+export type Model = ElevenModel;
 
-export function plan(line: Line, voice: VoiceEntry, model: Model) {
-  if (voice.provider === "voicekiller") {
-    return { provider: (voice.vkClone ? "voicekiller-clone" : "voicekiller") as Provider, text: stripTags(line.text), instructions: vkInstructions(line.direction.emotion, line.direction.speed), model: "voicekiller" as const };
-  }
-  return { provider: (model === "eleven_v4" ? "eleven-v4" : "eleven-tts") as Provider, text: composeText(line), instructions: undefined, model };
+/** What is sent for this line and voice. Engines without tags get the plain words, plus delivery in words where they take it. */
+export function plan(line: Line, voice: VoiceEntry, model: Model): { provider: Provider; text: string; instructions?: string; model: Take["model"] } {
+  const e = voice.provider;
+  const provider = providerFor(e, model, voice.vkClone);
+  if (ENGINES[e].tags) return { provider, text: composeText(line), model };
+  const instructions = e === "voicekiller" ? vkInstructions(line.direction.emotion, line.direction.speed) : undefined;
+  return { provider, text: stripTags(line.text), instructions, model: e as Take["model"] };
 }
 
 export async function makeTake(projectId: string, line: Line, voice: VoiceEntry, model: Model): Promise<Take> {
@@ -33,4 +36,8 @@ export async function makeSound(projectId: string, prompt: string, seconds: numb
   await api.takeWrite(projectId, id, ext, out.audioB64);
   const real = await remember(id, out);
   return { id, ext, seconds: real } as const;
+}
+
+export function modelLabel(m: Take["model"]): string {
+  return m === "eleven_v4" ? "Eleven v4" : m === "eleven_v3" ? "Eleven v3" : m === "voicekiller" ? "VoiceKiller" : m === "kie" ? "Kie" : m === "piper" ? "Piper" : "Local";
 }

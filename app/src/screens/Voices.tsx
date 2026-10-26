@@ -1,35 +1,32 @@
-import { useMemo, useState } from "react";
-import { api, toUrl, type DesignPreview } from "../api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { api, type DesignPreview, type PiperVoice } from "../api";
 import { useApp } from "../ctx";
-import { fromBase64 } from "../audio";
-import { ACCENTS, LANGUAGES, languageName } from "../languages";
+import { ENGINES, ENGINE_ORDER, type Engine } from "../engines";
+import { kieFor, piperFor, voicekillerFor, type Found } from "../finder";
+import { Flag } from "../flags";
 import { Plus, Trash } from "../icons";
-import { PlayButton, Empty, Note, Tabs, useBusy } from "../ui";
-import type { VoiceEntry, VoiceInfo } from "../types";
+import { ACCENTS, languageName, TILES, type Tile } from "../languages";
+import { fromBase64 } from "../audio";
+import type { VoiceEntry } from "../types";
+import { Empty, Note, PlayButton, Tabs, useBusy } from "../ui";
 import { useSample, voiceLine } from "../useSample";
 
-type Tab = "mine" | "find" | "design" | "clone" | "vk";
-
+type TabId = "mine" | "find" | "design" | "clone";
 const now = () => new Date().toISOString();
 
 export default function Voices() {
-  const [tab, setTab] = useState<Tab>("mine");
+  const [tab, setTab] = useState<TabId>("mine");
   return (
     <section>
       <div>
         <h1>Voices</h1>
-        <p className="lede">Your library of voices: ones you found, designed, cloned or added. Every character in any project picks from here.</p>
+        <p className="lede">Your library of voices from every engine. Every character in any project picks from here.</p>
       </div>
-      <Tabs<Tab>
-        value={tab}
-        onChange={setTab}
-        items={[["mine", "My library"], ["find", "Find a voice"], ["design", "Design a voice"], ["clone", "Clone a voice"], ["vk", "VoiceKiller"]]}
-      />
+      <Tabs<TabId> value={tab} onChange={setTab} items={[["mine", "My library"], ["find", "Find a voice"], ["design", "Design a voice"], ["clone", "Clone a voice"]]} />
       {tab === "mine" && <Mine goFind={() => setTab("find")} />}
       {tab === "find" && <Find />}
       {tab === "design" && <Design />}
       {tab === "clone" && <Clone />}
-      {tab === "vk" && <VoiceKiller />}
     </section>
   );
 }
@@ -51,14 +48,19 @@ function Mine({ goFind }: { goFind: () => void }) {
   const sample = useSample();
   const { busy, run } = useBusy();
   const [sure, setSure] = useState("");
+  const [only, setOnly] = useState<Engine | "all">("all");
 
   const importAccount = () =>
     run(async () => {
       try {
         const mine = await api.voicesMine();
-        const fresh = mine.filter((m) => !library.some((l) => l.id === m.id && l.provider === "elevenlabs"));
-        saveLibrary((l) => [...l, ...fresh.filter((m) => !l.some((x) => x.id === m.id && x.provider === "elevenlabs")).map((m) => fromInfo(m, "account"))]);
-        toast(fresh.length ? `Added ${fresh.length} voices from your ElevenLabs account.` : "Nothing new in your ElevenLabs account.");
+        let added = 0;
+        saveLibrary((l) => {
+          const fresh = mine.filter((m) => !l.some((x) => x.id === m.id && x.provider === "elevenlabs"));
+          added = fresh.length;
+          return [...l, ...fresh.map((m): VoiceEntry => ({ id: m.id, name: m.name, provider: "elevenlabs", source: "account", language: m.language, accent: m.accent, gender: m.gender, notes: m.description, previewUrl: m.previewUrl ?? undefined, createdAt: now() }))];
+        });
+        toast(added ? `Added ${added} voices from your ElevenLabs account.` : "Nothing new in your ElevenLabs account.");
       } catch (e) {
         toast((e as Error).message, true);
       }
@@ -76,6 +78,8 @@ function Mine({ goFind }: { goFind: () => void }) {
     }
     setSure("");
   };
+  const shown = library.filter((v) => only === "all" || v.provider === only);
+  const present = ENGINE_ORDER.filter((e) => library.some((v) => v.provider === e));
 
   return (
     <>
@@ -87,20 +91,30 @@ function Mine({ goFind }: { goFind: () => void }) {
           {busy ? "Importing…" : "Import from my ElevenLabs account"}
         </button>
         <span className="muted small">{library.length} voice{library.length === 1 ? "" : "s"}</span>
+        {present.length > 1 && (
+          <span className="chips" role="group" aria-label="Show engine">
+            <button className="chip" aria-pressed={only === "all"} onClick={() => setOnly("all")}>
+              All
+            </button>
+            {present.map((e) => (
+              <button key={e} className="chip" aria-pressed={only === e} onClick={() => setOnly(e)}>
+                {ENGINES[e].label}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
       {library.length === 0 ? (
-        <Empty title="No voices yet">Find one in the shared library, design a new one from a description, or clone a voice you have permission to use.</Empty>
+        <Empty title="No voices yet">Pick a language in Find a voice, design a new voice from a description, or clone a voice you have permission to use.</Empty>
       ) : (
         <div className="grid">
-          {library.map((v) => (
+          {shown.map((v) => (
             <div key={v.provider + v.id} className="card voice-card">
               <div className="row between top">
                 <h2>{v.name}</h2>
-                <span className="badge accent">{v.provider === "voicekiller" ? "VoiceKiller" : v.source}</span>
+                <span className="badge accent">{ENGINES[v.provider].label}</span>
               </div>
-              <div className="meta">
-                {voiceLine(v) && <span className="badge">{voiceLine(v)}</span>}
-              </div>
+              <div className="meta">{voiceLine(v) && <span className="badge">{voiceLine(v)}</span>}</div>
               <input type="text" aria-label={`Notes for ${v.name}`} placeholder="Notes, for example: good for Ada's older sister" value={v.notes} onChange={(e) => patch(v.id, v.provider, { notes: e.target.value })} />
               <div className="row wrap">
                 <PlayButton label="Hear it" get={() => sample(v)} />
@@ -135,108 +149,209 @@ function Mine({ goFind }: { goFind: () => void }) {
   );
 }
 
-function fromInfo(v: VoiceInfo, source: VoiceEntry["source"]): VoiceEntry {
-  return { id: v.id, name: v.name, provider: "elevenlabs", source, language: v.language, accent: v.accent, gender: v.gender, notes: v.description, previewUrl: v.previewUrl ?? undefined, createdAt: now() };
-}
+// ---- Find a voice -------------------------------------------------------------------------------------------------
+
+type Slot = { state: "idle" | "loading" | "done" | "error"; items: Found[]; error?: string; more?: boolean; page?: number };
+const idle: Slot = { state: "idle", items: [] };
+
+let vkCache: { name: string; language: string }[] | null = null;
+let piperCache: PiperVoice[] | null = null;
 
 function Find() {
-  const { toast, keys } = useApp();
+  const { keys, toast, library, confirmSpend } = useApp();
   const add = useAdd();
-  const { busy, run } = useBusy();
-  const [q, setQ] = useState({ search: "", language: "", accent: "", gender: "" });
-  const [res, setRes] = useState<{ voices: VoiceInfo[]; more: boolean; page: number } | null>(null);
+  const [tile, setTile] = useState<Tile | null>(null);
+  const [filter, setFilter] = useState("");
+  const [gender, setGender] = useState("");
+  const [accent, setAccent] = useState("");
+  const [text, setText] = useState("");
+  const [on, setOn] = useState<Record<Engine, boolean>>({ elevenlabs: true, voicekiller: true, kie: true, piper: true, local: false });
+  const [slots, setSlots] = useState<Partial<Record<Engine, Slot>>>({});
+  const [busyKey, setBusyKey] = useState("");
+  const [expanded, setExpanded] = useState<Partial<Record<Engine, boolean>>>({});
+  const token = useRef(0);
 
-  const search = (page: number) =>
-    run(async () => {
-      try {
-        const r = await api.voicesShared(q.search, q.language, q.accent, q.gender, page);
-        setRes({ voices: page === 0 ? r.voices : [...(res?.voices ?? []), ...r.voices], more: r.more, page });
-      } catch (e) {
-        toast((e as Error).message, true);
-      }
-    });
+  const ready: Record<Engine, boolean> = { elevenlabs: keys.elevenlabs, voicekiller: keys.voicekiller, kie: keys.kie, piper: true, local: false };
+  const set = (e: Engine, s: Slot) => setSlots((all) => ({ ...all, [e]: s }));
 
-  const take = async (v: VoiceInfo) => {
-    if (!v.owner) return toast("This voice cannot be added from here.", true);
+  const tiles = useMemo(() => TILES.filter((t) => t.name.toLowerCase().includes(filter.trim().toLowerCase())), [filter]);
+
+  // Fetch from every ticked engine whenever the language or filters change.
+  useEffect(() => {
+    const my = ++token.current;
+    const ok = (e: Engine) => on[e] && ready[e];
+    const guard = (f: () => void) => token.current === my && f();
+    const timer = setTimeout(() => {
+      if (ok("elevenlabs")) {
+        set("elevenlabs", { state: "loading", items: [] });
+        api
+          .voicesShared(text, tile?.lang ?? "", accent || tile?.accent || "", gender, 0)
+          .then((r) => guard(() => set("elevenlabs", { state: "done", items: r.voices.map((v) => ({ engine: "elevenlabs" as const, id: v.id, name: v.name, language: v.language, accent: v.accent, gender: v.gender, description: v.description, previewUrl: v.previewUrl, owner: v.owner })), more: r.more, page: 0 })))
+          .catch((e: Error) => guard(() => set("elevenlabs", { state: "error", items: [], error: e.message })));
+      } else set("elevenlabs", idle);
+
+      const needLang = (e: Engine, load: () => Promise<Found[]>) => {
+        if (!ok(e)) return set(e, idle);
+        if (!tile) return set(e, { state: "idle", items: [] });
+        set(e, { state: "loading", items: [] });
+        load()
+          .then((items) => guard(() => set(e, { state: "done", items: items.filter((i) => (!gender || !i.gender || i.gender === gender) && (!text || i.name.toLowerCase().includes(text.toLowerCase()) || i.description.toLowerCase().includes(text.toLowerCase()))) })))
+          .catch((err: Error) => guard(() => set(e, { state: "error", items: [], error: err.message })));
+      };
+      needLang("voicekiller", async () => voicekillerFor(tile!, (vkCache ??= await api.voicesVoiceKiller())));
+      needLang("kie", async () => kieFor(tile!));
+      needLang("piper", async () => piperFor(tile!, (piperCache ??= await api.piperCatalog())));
+    }, 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tile, gender, accent, text, on, keys.elevenlabs, keys.voicekiller, keys.kie]);
+
+  const more = async (e: "elevenlabs") => {
+    const s = slots[e];
+    if (!s) return;
     try {
-      const id = await api.voiceAddShared(v.owner, v.id, v.name);
-      add({ ...fromInfo({ ...v, id }, "library") });
-    } catch (e) {
-      toast((e as Error).message, true);
+      const r = await api.voicesShared(text, tile?.lang ?? "", accent || tile?.accent || "", gender, (s.page ?? 0) + 1);
+      set(e, { ...s, items: [...s.items, ...r.voices.map((v) => ({ engine: "elevenlabs" as const, id: v.id, name: v.name, language: v.language, accent: v.accent, gender: v.gender, description: v.description, previewUrl: v.previewUrl, owner: v.owner }))], more: r.more, page: (s.page ?? 0) + 1 });
+    } catch (err) {
+      toast((err as Error).message, true);
     }
   };
-  const preview = (v: VoiceInfo) => async () => {
-    if (!v.previewUrl) throw new Error("No preview");
-    return toUrl(await api.previewFetch(v.previewUrl));
+
+  const toEntry = (f: Found, id = f.id): Omit<VoiceEntry, "notes" | "createdAt"> => ({ id, name: f.name, provider: f.engine, source: "library", language: f.language, accent: f.accent, gender: f.gender });
+  const asVoice = (f: Found): VoiceEntry => ({ ...toEntry(f), notes: "", createdAt: "", previewUrl: f.previewUrl ?? undefined });
+  const sample = useSample();
+
+  const take = async (f: Found) => {
+    const key = f.engine + f.id;
+    setBusyKey(key);
+    try {
+      if (f.engine === "elevenlabs") {
+        if (!f.owner) throw new Error("This voice cannot be added from here.");
+        add(toEntry(f, await api.voiceAddShared(f.owner, f.id, f.name)));
+      } else if (f.engine === "piper") {
+        const have = (await api.piperStatus()).voices.includes(f.id);
+        if (!have) {
+          const ok = await confirmSpend({ title: "Download this voice?", lines: [`${f.sizeMb} MB from the public Piper voice catalogue`, "The first time, the Piper program (22 MB) is downloaded too", "Then it works offline and is free to use"], download: true });
+          if (!ok) return;
+          const st = await api.piperStatus();
+          if (!st.installed) await api.piperInstall();
+          await api.piperInstallVoice(f.id);
+        }
+        add(toEntry(f));
+      } else add(toEntry(f));
+    } catch (e) {
+      toast((e as Error).message, true);
+    } finally {
+      setBusyKey("");
+    }
   };
 
+  const inLib = (f: Found) => library.some((x) => x.id === f.id && x.provider === f.engine);
+  const hear = (f: Found) => () => (f.engine === "piper" ? Promise.reject(new Error("Add this voice first to hear it.")) : sample(asVoice(f)));
+
+  const engineList = ENGINE_ORDER.filter((e) => e !== "local");
   return (
     <>
-      <p className="muted">Search ElevenLabs&apos; shared voice library. Pick a language and an accent to hear voices that fit your character. Previews are free.</p>
-      {!keys.elevenlabs && <Note kind="warn">Add your ElevenLabs key in Settings to search.</Note>}
-      <form
-        className="card row wrap"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void search(0);
-        }}
-      >
-        <input type="search" aria-label="Search voices" placeholder="Search, for example warm elder" value={q.search} onChange={(e) => setQ({ ...q, search: e.target.value })} style={{ flex: 1, minWidth: 180 }} />
-        <select aria-label="Language" value={q.language} onChange={(e) => setQ({ ...q, language: e.target.value })}>
-          <option value="">Any language</option>
-          {LANGUAGES.map((l) => (
-            <option key={l.code} value={l.code}>
-              {l.name}
-            </option>
-          ))}
-        </select>
-        <select aria-label="Accent" value={q.accent} onChange={(e) => setQ({ ...q, accent: e.target.value })}>
-          <option value="">Any accent</option>
-          {ACCENTS.map((a) => (
-            <option key={a} value={a}>
-              {a}
-            </option>
-          ))}
-        </select>
-        <select aria-label="Gender" value={q.gender} onChange={(e) => setQ({ ...q, gender: e.target.value })}>
-          <option value="">Any gender</option>
-          <option value="female">Female</option>
-          <option value="male">Male</option>
-        </select>
-        <button className="primary" type="submit" disabled={busy || !keys.elevenlabs}>
-          {busy ? "Searching…" : "Search"}
-        </button>
-      </form>
-      <p className="lang-note small">Nigerian Pidgin, Taglish and other mixed languages have no filter of their own: write the lines in that language and choose a voice with the matching accent.</p>
-      {res && res.voices.length === 0 && <Empty title="No voices matched">Try fewer filters.</Empty>}
-      {res && res.voices.length > 0 && (
-        <div className="grid">
-          {res.voices.map((v) => (
-            <div key={v.id} className="card voice-card">
-              <h2>{v.name}</h2>
-              <div className="meta">
-                <span className="badge">{[languageName(v.language), v.accent, v.gender].filter(Boolean).join(" · ")}</span>
-              </div>
-              <p className="muted small">{v.description}</p>
-              <div className="row">
-                <PlayButton label="Preview" get={preview(v)} disabled={!v.previewUrl} />
-                <span className="spacer" />
-                <button className="sm primary" onClick={() => void take(v)}>
-                  <Plus size={14} /> Add
-                </button>
-              </div>
-            </div>
-          ))}
+      <p className="muted">Pick a language to see voices for it from every engine you have set up. No need to know a voice by name.</p>
+
+      <div className="card stack">
+        <div className="row wrap">
+          <span className="muted small">Show voices from</span>
+          <span className="chips" role="group" aria-label="Engines">
+            {engineList.map((e) => (
+              <button key={e} className="chip" aria-pressed={on[e] && ready[e]} disabled={!ready[e]} title={ready[e] ? "" : "Add its key in Settings first"} onClick={() => setOn({ ...on, [e]: !on[e] })}>
+                {ENGINES[e].label}
+              </button>
+            ))}
+          </span>
         </div>
-      )}
-      {res?.more && (
-        <button onClick={() => void search(res.page + 1)} disabled={busy}>
-          Show more
+        <div className="row wrap">
+          <input type="search" aria-label="Find a language" placeholder="Find a language, for example Yoruba" value={filter} onChange={(e) => setFilter(e.target.value)} style={{ flex: 1, minWidth: 200 }} />
+          <select aria-label="Gender" value={gender} onChange={(e) => setGender(e.target.value)}>
+            <option value="">Any gender</option>
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+          </select>
+          <select aria-label="Accent" value={accent} onChange={(e) => setAccent(e.target.value)}>
+            <option value="">Any accent</option>
+            {ACCENTS.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+          <input type="search" aria-label="Describe or name a voice (optional)" placeholder="Describe it (optional): warm, deep…" value={text} onChange={(e) => setText(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="tiles" role="group" aria-label="Languages">
+        <button className="tile" aria-pressed={tile === null} onClick={() => setTile(null)}>
+          <span className="flag-ph" style={{ width: 22, height: 16 }} aria-hidden="true" />
+          Popular
         </button>
-      )}
+        {tiles.map((t) => (
+          <button key={t.id} className="tile" aria-pressed={tile?.id === t.id} onClick={() => setTile(t)}>
+            <Flag cc={t.cc} />
+            {t.name}
+          </button>
+        ))}
+        {tiles.length === 0 && <span className="muted">No language matches that.</span>}
+      </div>
+
+      <h3>{tile ? `Voices for ${tile.name}` : "Popular voices on ElevenLabs"}</h3>
+      {!tile && <p className="muted small">Choose a language above to also see VoiceKiller, Kie and offline Piper voices.</p>}
+      {tile?.mixed && <Note>{tile.name} has no language of its own. Write the lines the way they are spoken and pick a voice with a matching accent. Piper and Kie are not offered for it.</Note>}
+
+      {engineList.map((e) => {
+        const s = slots[e];
+        if (!on[e] || !ready[e] || !s || s.state === "idle") return null;
+        return (
+          <div key={e} className="stack">
+            <div className="row">
+              <h2>{ENGINES[e].label}</h2>
+              {ENGINES[e].local && <span className="badge ok">Offline, free</span>}
+              {s.state === "done" && <span className="muted small">{s.items.length}{s.more ? "+" : ""} voices</span>}
+            </div>
+            {s.state === "loading" && <p className="muted">Looking…</p>}
+            {s.state === "error" && <Note kind="err">{s.error}</Note>}
+            {s.state === "done" && s.items.length === 0 && <p className="muted">No voices matched here. Try fewer filters.</p>}
+            <div className="grid">
+              {s.items.slice(0, expanded[e] ? s.items.length : 24).map((f) => (
+                <div key={f.engine + f.id} className="card voice-card">
+                  <h2>{f.name}</h2>
+                  <div className="meta">
+                    <span className="badge">{[languageName(f.language.split(/[-_]/)[0] ?? f.language), f.accent, f.gender].filter(Boolean).join(" · ") || f.language}</span>
+                    {f.sizeMb ? <span className="badge">{f.sizeMb} MB</span> : null}
+                  </div>
+                  {f.description && <p className="muted small">{f.description}</p>}
+                  <div className="row">
+                    {f.engine === "piper" ? <span className="muted small">Hear it after adding</span> : <PlayButton label="Hear it" get={hear(f)} disabled={!f.previewUrl && f.engine === "elevenlabs"} />}
+                    <span className="spacer" />
+                    <button className="sm primary" disabled={inLib(f) || busyKey === f.engine + f.id} onClick={() => void take(f)}>
+                      {inLib(f) ? "In library" : busyKey === f.engine + f.id ? "Adding…" : (<><Plus size={14} /> {f.engine === "piper" ? "Download" : "Add"}</>)}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {s.items.length > 24 && !expanded[e] && (
+              <div>
+                <button onClick={() => setExpanded({ ...expanded, [e]: true })}>Show all {s.items.length}</button>
+              </div>
+            )}
+            {e === "elevenlabs" && s.more && (
+              <div>
+                <button onClick={() => void more("elevenlabs")}>Show more</button>
+              </div>
+            )}
+          </div>
+        );
+      })}
     </>
   );
 }
+
+// ---- Design and clone ---------------------------------------------------------------------------------------------
 
 const EXAMPLES = [
   "An older Nigerian man, warm and gravelly, speaking slowly with quiet authority",
@@ -255,7 +370,7 @@ function Design() {
   const ok = desc.trim().length >= 20;
 
   const make = async () => {
-    const go = await confirmSpend({ title: "Design a voice?", lines: ["Makes up to 3 preview voices from your description", "Uses ElevenLabs credits for each preview"] });
+    const go = await confirmSpend({ title: "Design a voice?", lines: ["Makes up to 3 preview voices from your description", "Uses ElevenLabs credits for each preview. Saving a voice to your account needs a plan that allows it."] });
     if (!go) return;
     await run(async () => {
       try {
@@ -278,7 +393,7 @@ function Design() {
 
   return (
     <>
-      <p className="muted">Describe the voice you imagine, including age, accent, tone and pace. You get three previews to choose from.</p>
+      <p className="muted">Describe the voice you imagine, including age, accent, tone and pace. You get three previews to choose from. Keeping one in your account may need a paid ElevenLabs plan; if it does, the app will say so.</p>
       {!keys.elevenlabs && <Note kind="warn">Add your ElevenLabs key in Settings first.</Note>}
       <div className="card stack">
         <label className="field">
@@ -362,75 +477,6 @@ function Clone() {
         <div>
           <button className="primary" disabled={!ready || busy} onClick={() => void go()}>
             {busy ? "Creating…" : "Create clone"}
-          </button>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function VoiceKiller() {
-  const { keys, toast } = useApp();
-  const add = useAdd();
-  const sample = useSample();
-  const { busy, run } = useBusy();
-  const [list, setList] = useState<{ name: string; language: string }[] | null>(null);
-  const [filter, setFilter] = useState("");
-  const [cloneName, setCloneName] = useState("");
-
-  const load = () =>
-    run(async () => {
-      try {
-        setList(await api.voicesVoiceKiller());
-      } catch (e) {
-        toast((e as Error).message, true);
-      }
-    });
-  const shown = useMemo(() => (list ?? []).filter((v) => v.name.toLowerCase().includes(filter.toLowerCase())).slice(0, 120), [list, filter]);
-  const entry = (name: string, language: string, vkClone = false): Parameters<ReturnType<typeof useAdd>>[0] => ({ id: name, name, provider: "voicekiller", vkClone, source: vkClone ? "cloned" : "library", language, accent: "", gender: "", notes: vkClone ? "Cloned on voicekiller.com" : "" });
-
-  return (
-    <>
-      <p className="muted">VoiceKiller offers about two thousand voices in many languages. It has no laugh or cough sounds, so for those use an ElevenLabs voice or add a sound clip. Delivery and pace are sent as instructions.</p>
-      {!keys.voicekiller && <Note kind="warn">Add your VoiceKiller key and user id in Settings first.</Note>}
-      <div className="row wrap">
-        <button className="primary" onClick={() => void load()} disabled={busy || !keys.voicekiller}>
-          {busy ? "Loading…" : list ? "Reload voices" : "Load voice list"}
-        </button>
-        {list && <input type="search" aria-label="Filter voices" placeholder={`Filter ${list.length} voices`} value={filter} onChange={(e) => setFilter(e.target.value)} />}
-      </div>
-      {list && (
-        <div className="grid">
-          {shown.map((v) => (
-            <div key={v.name} className="card voice-card">
-              <h2>{v.name}</h2>
-              <div className="meta">
-                <span className="badge">{v.language}</span>
-              </div>
-              <div className="row">
-                <PlayButton label="Hear it" get={() => sample({ ...entry(v.name, v.language), notes: "", createdAt: "" })} />
-                <span className="spacer" />
-                <button className="sm primary" onClick={() => add(entry(v.name, v.language))}>
-                  <Plus size={14} /> Add
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      <div className="card stack">
-        <h2>A voice you cloned on voicekiller.com</h2>
-        <p className="muted small">Clones cannot be created through their API, so register one here by the exact name you gave it on their website.</p>
-        <div className="row">
-          <input type="text" aria-label="Clone name on VoiceKiller" placeholder="Exact name of the clone" value={cloneName} onChange={(e) => setCloneName(e.target.value)} style={{ flex: 1 }} />
-          <button
-            disabled={!cloneName.trim()}
-            onClick={() => {
-              add(entry(cloneName.trim(), "en", true));
-              setCloneName("");
-            }}
-          >
-            Register clone
           </button>
         </div>
       </div>
