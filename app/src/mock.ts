@@ -107,6 +107,14 @@ export const mock: Api = {
     takes.set(id, { audioB64: tone(24, 220), mime: "audio/wav" });
     return { id, ext: "wav", name: path.split(/[\/]/).pop() ?? "music.wav", bytes: 24 * 22050 * 2 + 44, sha256: "d".repeat(64) };
   },
+  musicGenerate: async (_p: string, req: { title: string }) => {
+    await wait(1200);
+    return [0, 1].map((i) => {
+      const id = "m-suno" + takes.size + i;
+      takes.set(id, { audioB64: tone(20 + i * 4, 196 + i * 40), mime: "audio/wav" });
+      return { id, ext: "wav", name: `${req.title} (take ${i + 1})`, bytes: 1000, sha256: "e".repeat(64), seconds: 20 + i * 4 };
+    });
+  },
   ffmpegStatus: async () => ({ installed: ffmpegInstalled, source: ffmpegInstalled ? ("greenroom" as const) : null }),
   ffmpegInstall: async () => (await wait(900), void (ffmpegInstalled = true)),
   videoMux: async (_p: string, video: string, _m: string, _k: boolean) => {

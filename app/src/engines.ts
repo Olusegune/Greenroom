@@ -63,6 +63,8 @@ export interface Prices {
   sfxClip: number;
   directorCall: number;
   designPreview: number;
+  /** One Suno music request (usually two tracks). */
+  musicRun?: number;
 }
 
 export const DEFAULT_PRICES: Prices = { currency: "USD", perKChars: {}, sfxClip: 0, directorCall: 0, designPreview: 0 };

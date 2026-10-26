@@ -5,6 +5,7 @@ import { planTimeline, type Placed } from "../audio";
 import { useApp } from "../ctx";
 import { Play, Plus, Stop, Trash } from "../icons";
 import { mixUrl } from "../mixcache";
+import MakeMusic, { type Made } from "./MakeMusic";
 import { remember } from "../media";
 import { fpsOf, fpsValue, tcAt } from "../picture";
 import { duckCurve, EDGE_FADE_IN, EDGE_FADE_OUT, formatClock, layoutRows, parseClock, rulerStep, snapTime } from "../timeline";
@@ -239,6 +240,12 @@ export default function Timeline() {
       }
     });
 
+  const useMade = (m: Made) => {
+    const clip: MusicClip = { id: "mu-" + uid(), name: m.name, take: { id: m.id, ext: m.ext, seconds: m.real, sha256: m.sha256, bytes: m.bytes }, start: Math.max(0, t), gainDb: -10, fadeIn: 0.5, fadeOut: 2, trimIn: 0, length: m.real, duck: true, source: m.source };
+    change("", (p) => ({ ...p, music: [...(p.music ?? []), clip] }));
+    setSel({ kind: "music", id: clip.id });
+  };
+
   const removeMusic = (id: string) => {
     change("", (p) => ({ ...p, music: (p.music ?? []).filter((m) => m.id !== id) }));
     setSel(null);
@@ -403,6 +410,8 @@ export default function Timeline() {
         </div>
         <p className="muted small">Fades show as shaded corners; the line inside a music clip is how far it dips under dialogue. Sound clips and the atmosphere move with their line.</p>
       </div>
+
+      <MakeMusic onUse={useMade} />
 
       {selLine && selSpan && selItem && (
         <div className="card stack lit">

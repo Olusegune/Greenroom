@@ -20,6 +20,10 @@ describe("cost estimates", () => {
     expect(e.cost).toBeCloseTo(0.5 + 0.1 + 0.02 + 0.3, 6);
     expect(e.priced).toBe(true);
   });
+  it("price a music request by the request, and flag it when no price is set", () => {
+    expect(estimateCost({ ...prices, musicRun: 0.5 }, [{ kind: "music" }, { kind: "music" }])).toEqual({ cost: 1, priced: true });
+    expect(estimateCost(prices, [{ kind: "music" }])).toEqual({ cost: 0, priced: false });
+  });
   it("counts offline engines as free and flags unknown prices as a lower bound", () => {
     expect(estimateCost(prices, [{ kind: "speech", engine: "piper", chars: 99999 }])).toEqual({ cost: 0, priced: true });
     const e = estimateCost(prices, [{ kind: "speech", engine: "kie", chars: 1000 }, { kind: "speech", engine: "elevenlabs", chars: 1000 }]);

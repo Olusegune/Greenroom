@@ -68,6 +68,19 @@ export interface MuxResult {
   path: string;
   codec: string;
 }
+export interface MusicReq {
+  title: string;
+  style: string;
+  lyrics: string;
+  instrumental: boolean;
+  version: string;
+  negativeTags: string;
+  vocalGender: string;
+  duration: number;
+}
+export interface MadeMusic extends Imported {
+  seconds: number;
+}
 export interface Imported {
   id: string;
   ext: string;
@@ -128,6 +141,7 @@ const real = {
   piperRemoveVoice: (key: string) => call<void>("piper_remove_voice", { key }),
   localVoices: () => call<string[]>("local_voices"),
   directorComplete: (system: string, user: string) => call<string>("director_complete", { system, user }),
+  musicGenerate: (project: string, req: MusicReq) => call<MadeMusic[]>("music_generate", { project, req }),
   audioImport: (project: string, path: string) => call<Imported>("audio_import", { project, path }),
   pickAudio: async (): Promise<string | null> => {
     const r = await openDialog({ multiple: false, directory: false, filters: [{ name: "Audio", extensions: AUDIO_EXTENSIONS }] });

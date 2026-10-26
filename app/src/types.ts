@@ -202,7 +202,7 @@ export type LicenceUse = "unknown" | "commercial" | "personal";
 
 export interface LedgerEntry {
   at: string;
-  kind: "speech" | "sound" | "director" | "design" | "sample";
+  kind: "speech" | "sound" | "director" | "design" | "sample" | "music";
   engine: string;
   chars: number;
   /** Estimated cost from the prices the owner entered. Zero when no price is set. */

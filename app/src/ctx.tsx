@@ -38,7 +38,7 @@ interface Ctx {
   /** Cost lines and any over-budget warning for work about to be paid for, to add to a confirmation sheet. */
   priceLines: (items: SpendItem[]) => { lines: string[]; warn?: string };
   /** Record paid work in the project ledger, with an estimated cost from the owner's prices. */
-  addLedger: (e: { kind: "speech" | "sound" | "director" | "design" | "sample"; engine: string; chars: number; items: SpendItem[]; note?: string }) => void;
+  addLedger: (e: { kind: "speech" | "sound" | "director" | "design" | "sample" | "music"; engine: string; chars: number; items: SpendItem[]; note?: string }) => void;
 }
 
 const C = createContext<Ctx | null>(null);
@@ -155,7 +155,7 @@ export function Provider({ children }: { children: ReactNode }) {
   const priceLines = useCallback((items: SpendItem[]) => spendLines(engines.prices ?? DEFAULT_PRICES, items, project?.budget, project?.ledger), [engines.prices, project?.budget, project?.ledger]);
 
   const addLedger = useCallback(
-    (e: { kind: "speech" | "sound" | "director" | "design" | "sample"; engine: string; chars: number; items: SpendItem[]; note?: string }) => {
+    (e: { kind: "speech" | "sound" | "director" | "design" | "sample" | "music"; engine: string; chars: number; items: SpendItem[]; note?: string }) => {
       const cost = estimateCost(engines.prices ?? DEFAULT_PRICES, e.items).cost;
       edit((p) => ({ ...p, ledger: [...(p.ledger ?? []), { at: new Date().toISOString(), kind: e.kind, engine: e.engine, chars: e.chars, cost, note: e.note }] }));
     },

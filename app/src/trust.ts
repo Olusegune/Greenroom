@@ -16,7 +16,7 @@ export const shortHash = (h?: string) => (h ? h.slice(0, 12) : "none");
 
 // ---- cost -----------------------------------------------------------------------------------------------------
 
-export type SpendItem = { kind: "speech"; engine: Engine; chars: number } | { kind: "sound"; count: number } | { kind: "director" } | { kind: "design"; count: number };
+export type SpendItem = { kind: "speech"; engine: Engine; chars: number } | { kind: "sound"; count: number } | { kind: "director" } | { kind: "design"; count: number } | { kind: "music" };
 
 export interface Estimate {
   cost: number;
@@ -39,6 +39,8 @@ export function estimateCost(prices: Prices, items: SpendItem[]): Estimate {
       amount = it.count;
     } else if (it.kind === "director") {
       unit = prices.directorCall;
+    } else if (it.kind === "music") {
+      unit = prices.musicRun;
     } else {
       unit = prices.designPreview;
       amount = it.count;

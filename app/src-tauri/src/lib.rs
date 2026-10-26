@@ -327,6 +327,42 @@ async fn video_mux(app: tauri::AppHandle, project: String, video: String, mix: S
     .await
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MadeMusic {
+    id: String,
+    ext: String,
+    name: String,
+    bytes: u64,
+    sha256: String,
+    seconds: f64,
+}
+
+/// Makes music with Suno through Kie and keeps every returned track in the project as a take that is never overwritten.
+#[tauri::command]
+async fn music_generate(app: tauri::AppHandle, project: String, req: kie::MusicReq) -> Result<Vec<MadeMusic>, String> {
+    let r = root(&app)?;
+    let input = kie::music_input(&req)?;
+    let key = get_key("kie")?;
+    blocking(move || {
+        let tracks = kie::Client::new(kie::BASE, &key).music(input)?;
+        let mut out = Vec::new();
+        for (i, t) in tracks.iter().enumerate() {
+            let bytes = net::download(&t.url, 40 << 20)?;
+            let ext = if bytes.starts_with(b"RIFF") { "wav" } else if bytes.starts_with(b"ID3") || (bytes.len() > 2 && bytes[0] == 0xFF && bytes[1] & 0xE0 == 0xE0) { "mp3" } else { return Err("Kie sent a file that is not audio Greenroom can use.".into()) };
+            let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+            let id = format!("m-{nanos:x}{i}");
+            store::take_write(&r, &project, &id, ext, &bytes)?;
+            use sha2::{Digest, Sha256};
+            let sha256 = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+            let name = if t.title.is_empty() { format!("Suno {}", i + 1) } else { t.title.clone() };
+            out.push(MadeMusic { id, ext: ext.into(), name, bytes: bytes.len() as u64, sha256, seconds: t.seconds });
+        }
+        Ok(out)
+    })
+    .await
+}
+
 #[tauri::command]
 fn casts_load(app: tauri::AppHandle) -> Result<String, String> {
     Ok(store::casts_load(&root(&app)?))
@@ -463,7 +499,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             key_status, set_key, clear_key, run_clip, voices_mine, voices_voicekiller, voices_shared, voice_add_shared, voice_design, voice_design_save, voice_clone,
             voice_delete, preview_fetch, project_list, project_load, project_save, take_write, take_read, export_write, library_load, library_save, casts_load, casts_save,
-            save_report, audio_import, ffmpeg_status, ffmpeg_install, video_mux, video_probe, video_allow, director_complete, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
+            save_report, audio_import, music_generate, ffmpeg_status, ffmpeg_install, video_mux, video_probe, video_allow, director_complete, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
         ])
         .run(tauri::generate_context!())
         .expect("error while running Greenroom");

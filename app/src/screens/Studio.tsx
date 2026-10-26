@@ -157,6 +157,10 @@ export default function Studio() {
             Per voice design preview
             <input type="number" min={0} step={0.001} value={prices.designPreview || ""} onChange={(e) => setPrices({ designPreview: Math.max(0, Number(e.target.value)) })} placeholder="unknown" />
           </label>
+          <label className="field" style={{ width: 170 }}>
+            Per music request (Suno)
+            <input type="number" min={0} step={0.001} value={prices.musicRun || ""} onChange={(e) => setPrices({ musicRun: Math.max(0, Number(e.target.value)) })} placeholder="unknown" />
+          </label>
           <label className="field" style={{ width: 200 }}>
             Budget for this project ({prices.currency})
             <input type="number" min={0} step={0.5} value={project.budget ?? ""} onChange={(e) => edit((p) => ({ ...p, budget: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) }))} placeholder="no limit" />
