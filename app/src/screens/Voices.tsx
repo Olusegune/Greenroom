@@ -398,14 +398,38 @@ const EXAMPLES = [
   "A tired British detective, dry and low, weary after a long night",
 ];
 
+/** Accents to build into a description. The wording is what the designer model is told; whether it sounds right is for the owner's ear. */
+const DESIGN_ACCENTS: { label: string; phrase: string }[] = [
+  { label: "Nigerian English (Yoruba)", phrase: "speaks English with a Yoruba-influenced Nigerian accent" },
+  { label: "Nigerian English (Igbo)", phrase: "speaks English with an Igbo-influenced Nigerian accent" },
+  { label: "Nigerian English (Hausa)", phrase: "speaks English with a Hausa-influenced Nigerian accent" },
+  { label: "Nigerian Pidgin", phrase: "speaks Nigerian Pidgin English with a natural Lagos street rhythm" },
+  { label: "Ghanaian English", phrase: "speaks English with a Ghanaian accent" },
+  { label: "Filipino English", phrase: "speaks English with a Filipino accent" },
+  { label: "Indian English", phrase: "speaks English with an Indian accent" },
+  { label: "Jamaican English", phrase: "speaks English with a Jamaican accent" },
+  { label: "South African English", phrase: "speaks English with a South African accent" },
+  { label: "Scottish English", phrase: "speaks English with a Scottish accent" },
+];
+
 function Design() {
   const { confirmSpend, toast, keys, priceLines, addLedger } = useApp();
   const add = useAdd();
   const { busy, run } = useBusy();
   const [desc, setDesc] = useState("");
   const [sample, setSample] = useState("");
+  const [accent, setAccent] = useState("");
   const [previews, setPreviews] = useState<{ p: DesignPreview; url: string; name: string }[]>([]);
   const ok = desc.trim().length >= 20;
+  const pick = (label: string) => {
+    const old = DESIGN_ACCENTS.find((a) => a.label === accent);
+    const next = DESIGN_ACCENTS.find((a) => a.label === label);
+    let d = desc;
+    if (old) d = d.split(old.phrase).join("").replace(/[,.\s]+$/, "").replace(/\s+,/g, ",").trim();
+    if (next) d = `${d.replace(/[.\s]+$/, "")}${d.trim() ? ", " : ""}${next.phrase}.`.trim();
+    setAccent(label);
+    setDesc(d.slice(0, 1000));
+  };
 
   const make = async () => {
     const price = priceLines([{ kind: "design", count: 3 }]);
@@ -425,7 +449,7 @@ function Design() {
     const it = previews[i]!;
     try {
       const id = await api.voiceDesignSave(it.p.generatedVoiceId, it.name, desc);
-      add({ id, name: it.name, provider: "elevenlabs", source: "designed", language: "", accent: "", gender: "", notes: desc.slice(0, 160), consent: { speaker: "No real person: designed from a description", basis: "designed", reference: desc.slice(0, 120), date: new Date().toISOString().slice(0, 10) } });
+      add({ id, name: it.name, provider: "elevenlabs", source: "designed", language: "", accent: accent, gender: "", notes: desc.slice(0, 160), consent: { speaker: "No real person: designed from a description", basis: "designed", reference: desc.slice(0, 120), date: new Date().toISOString().slice(0, 10) } });
     } catch (e) {
       toast((e as Error).message, true);
     }
@@ -440,6 +464,18 @@ function Design() {
           Describe the voice (20 to 1000 characters)
           <textarea rows={3} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder={EXAMPLES[0]} />
         </label>
+        <label className="field">
+          Accent (adds a sentence to the description, which you can edit)
+          <select value={accent} onChange={(e) => pick(e.target.value)}>
+            <option value="">No particular accent</option>
+            {DESIGN_ACCENTS.map((a) => (
+              <option key={a.label} value={a.label}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {accent && <p className="muted small">Whether the voice really sounds {accent} is not guaranteed: listen to all three previews before saving. For an exact accent, a cloned voice from a real speaker who gave permission is usually closer.</p>}
         <div className="chips" aria-label="Examples">
           {EXAMPLES.map((e) => (
             <button key={e} className="chip" aria-pressed={desc === e} onClick={() => setDesc(e)}>
