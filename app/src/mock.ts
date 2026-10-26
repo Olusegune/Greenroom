@@ -13,6 +13,7 @@ const takes = new Map<string, { audioB64: string; mime: string }>();
 let library: VoiceEntry[] = [];
 let engines: Partial<EnginesCfg> = {};
 let piperInstalled = false;
+let ffmpegInstalled = false;
 const piperVoices = new Set<string>();
 const PIPER: PiperVoice[] = [
   { key: "en_GB-alba-medium", name: "alba", code: "en_GB", family: "en", language: "English", country: "Great Britain", quality: "medium", speakers: 1, sizeMb: 60.3 },
@@ -101,6 +102,13 @@ export const mock: Api = {
     const id = "m-demo" + takes.size;
     takes.set(id, { audioB64: tone(24, 220), mime: "audio/wav" });
     return { id, ext: "wav", name: path.split(/[\/]/).pop() ?? "music.wav", bytes: 24 * 22050 * 2 + 44, sha256: "d".repeat(64) };
+  },
+  ffmpegStatus: async () => ({ installed: ffmpegInstalled, source: ffmpegInstalled ? ("greenroom" as const) : null }),
+  ffmpegInstall: async () => (await wait(900), void (ffmpegInstalled = true)),
+  videoMux: async (_p: string, video: string, _m: string, _k: boolean) => {
+    await wait(700);
+    const stem = (video.split(/[\/]/).pop() ?? "video").replace(/\.[^.]+$/, "");
+    return { path: ["C:", "Users", "you", "Documents", "Greenroom", "projects", "demo", "exports", "Video", stem + " with Greenroom mix.mp4"].join("\\"), codec: "AAC 320 kbps" };
   },
   videoProbe: async (path: string): Promise<VideoInfo> => ({ container: path.split(".").pop() ?? "mp4", known: false, fpsNum: 0, fpsDen: 0, durationSec: 0, width: 0, height: 0 }),
   videoAllow: async () => undefined,

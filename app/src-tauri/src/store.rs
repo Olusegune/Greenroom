@@ -141,6 +141,10 @@ pub fn safe_filename(name: &str) -> Option<String> {
     (!n.is_empty() && n.len() <= 120 && !n.contains("..")).then_some(n)
 }
 
+pub fn export_dir(root: &Path, project: &str) -> Result<PathBuf, String> {
+    Ok(project_dir(root, project)?.join("exports"))
+}
+
 pub fn export_write(root: &Path, project: &str, subfolder: &str, filename: &str, bytes: &[u8]) -> Result<PathBuf, String> {
     let name = safe_filename(filename).ok_or_else(|| bad("file name"))?;
     let sub = if subfolder.is_empty() { None } else { Some(safe_filename(subfolder).ok_or_else(|| bad("folder name"))?) };

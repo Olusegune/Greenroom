@@ -4,6 +4,7 @@
 mod eleven;
 mod kie;
 mod local;
+mod mux;
 mod net;
 mod store;
 mod video;
@@ -296,6 +297,37 @@ fn export_write(app: tauri::AppHandle, project: String, folder: String, filename
 }
 
 #[tauri::command]
+fn ffmpeg_status(app: tauri::AppHandle) -> Result<mux::Status, String> {
+    Ok(mux::status(&root(&app)?))
+}
+
+#[tauri::command]
+async fn ffmpeg_install(app: tauri::AppHandle) -> Result<(), String> {
+    let r = root(&app)?;
+    blocking(move || mux::install(&r, mux::FFMPEG_URL, mux::FFMPEG_SIZE, mux::FFMPEG_SHA256, &fetcher)).await
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MuxResult {
+    path: String,
+    codec: String,
+}
+
+/// Writes a copy of the project's picture with a mix (already written into its exports folder) as the sound.
+#[tauri::command]
+async fn video_mux(app: tauri::AppHandle, project: String, video: String, mix: String, keep_original: bool) -> Result<MuxResult, String> {
+    let r = root(&app)?;
+    blocking(move || {
+        let exports = store::export_dir(&r, &project)?;
+        let name = store::safe_filename(&mix).ok_or("The mix file name was not valid.")?;
+        let (path, c) = mux::mux(&r, std::path::Path::new(&video), &exports.join(name), &exports.join("Video"), keep_original, std::time::Duration::from_secs(20 * 60))?;
+        Ok(MuxResult { path: path.to_string_lossy().into_owned(), codec: c.label.into() })
+    })
+    .await
+}
+
+#[tauri::command]
 fn library_load(app: tauri::AppHandle) -> Result<String, String> {
     Ok(store::library_load(&root(&app)?))
 }
@@ -421,7 +453,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             key_status, set_key, clear_key, run_clip, voices_mine, voices_voicekiller, voices_shared, voice_add_shared, voice_design, voice_design_save, voice_clone,
             voice_delete, preview_fetch, project_list, project_load, project_save, take_write, take_read, export_write, library_load, library_save,
-            save_report, audio_import, video_probe, video_allow, director_complete, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
+            save_report, audio_import, ffmpeg_status, ffmpeg_install, video_mux, video_probe, video_allow, director_complete, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
         ])
         .run(tauri::generate_context!())
         .expect("error while running Greenroom");

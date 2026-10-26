@@ -59,6 +59,14 @@ export interface VideoInfo {
 }
 export const VIDEO_EXTENSIONS = ["mp4", "mov", "m4v", "webm", "mkv", "avi", "mpg", "mpeg"];
 
+export interface FfmpegStatus {
+  installed: boolean;
+  source: "greenroom" | "system" | null;
+}
+export interface MuxResult {
+  path: string;
+  codec: string;
+}
 export interface Imported {
   id: string;
   ext: string;
@@ -122,6 +130,9 @@ const real = {
     const r = await openDialog({ multiple: false, directory: false, filters: [{ name: "Audio", extensions: AUDIO_EXTENSIONS }] });
     return typeof r === "string" ? r : null;
   },
+  ffmpegStatus: () => call<FfmpegStatus>("ffmpeg_status"),
+  ffmpegInstall: () => call<void>("ffmpeg_install"),
+  videoMux: (project: string, video: string, mix: string, keepOriginal: boolean) => call<MuxResult>("video_mux", { project, video, mix, keepOriginal }),
   videoProbe: (path: string) => call<VideoInfo>("video_probe", { path }),
   videoAllow: (path: string) => call<void>("video_allow", { path }),
   /** Opens the Windows file picker. Returns null if the owner cancels. */

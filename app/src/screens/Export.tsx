@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { api, inApp } from "../api";
+import { api, inApp, type FfmpegStatus } from "../api";
 import { encodeWav, fmtTime, fromBase64, lineFileName, planTimeline, renderPlan, stemSets, textBase64, toBase64, type Plan } from "../audio";
 import { fpsLabel, fpsOf, frameToSec, tcAt } from "../picture";
 import { useApp } from "../ctx";
@@ -27,6 +27,13 @@ export default function Export() {
   const [step, setStep] = useState("");
   const [report, setReport] = useState<string>("");
   const [sync, setSync] = useState<string>("");
+  const [ff, setFf] = useState<FfmpegStatus | null>(null);
+  const [keepOriginal, setKeepOriginal] = useState(false);
+  const [videoOut, setVideoOut] = useState<{ path: string; codec: string } | null>(null);
+  const hasPicture = !!project?.picture;
+  useEffect(() => {
+    if (hasPicture) void api.ffmpegStatus().then(setFf).catch(() => setFf({ installed: false, source: null }));
+  }, [hasPicture]);
   if (!project) return null;
 
   const cfg: ExportCfg = { ...DEFAULT_EXPORT, ...(project.export ?? {}) };
@@ -180,6 +187,43 @@ export default function Export() {
       setStep("");
     });
 
+  const getFfmpeg = () =>
+    run(async () => {
+      try {
+        setStep("Downloading ffmpeg (about 115 MB)…");
+        await api.ffmpegInstall();
+        setFf(await api.ffmpegStatus());
+        toast("ffmpeg is ready.");
+      } catch (e) {
+        toast((e as Error).message, true);
+      }
+      setStep("");
+    });
+
+  /** Mixes to exactly the picture's length, saves that mix, and writes a copy of the video with it as the sound. */
+  const writeVideo = () =>
+    run(async () => {
+      if (!pic) return;
+      try {
+        setStep("Mixing to the picture…");
+        const vplan = planTimeline(project, undefined, { exactTotal: pic.duration > 0 ? pic.duration : undefined });
+        const main = await render(vplan);
+        const m = measure(main, cfg.rate);
+        const np = planNormalization(m, target.lufs, cfg.ceiling);
+        const tc = Math.round(frameToSec(pic.startFrame, fpsOf(pic)) * cfg.rate);
+        const name = `${stem} - mix for video.wav`;
+        await api.exportWrite(project.id, "", name, toBase64(encodeWav(applyGain(main, np.gainDb), cfg.rate, { bits: cfg.bits, dither: cfg.bits === 16, description: project.name, originator: "Greenroom", timeReference: tc })));
+        setStep("Writing the video (the picture is copied, not re-encoded)…");
+        const r = await api.videoMux(project.id, pic.path, name, keepOriginal);
+        setVideoOut(r);
+        setMade((old) => [...old, r.path]);
+        toast("Video written.");
+      } catch (e) {
+        toast((e as Error).message, true);
+      }
+      setStep("");
+    });
+
   const reveal = async (path: string) => {
     if (!inApp()) return;
     try {
@@ -261,6 +305,36 @@ export default function Export() {
             {pic.name} · {fpsLabel(fpsOf(pic))} · starts at {tcAt(0, pic)} · {pic.duration.toFixed(3)} s. Lines you placed on the Picture screen keep their exact times in every file, and the cue sheet and editor timeline use this frame rate and start timecode.
           </p>
           {check("matchPicture", "Make the mix exactly as long as the picture", "So the file drops onto the video from its first frame to its last. Anything placed after the picture ends is cut off.")}
+          <h3 style={{ marginTop: 8 }}>A video with the new sound</h3>
+          <p className="muted small">Writes a copy of your video with the Greenroom mix as its sound, so you can watch or send it as one file. The picture is copied without re-encoding and your original is never changed. The mix is made as long as the picture, at the loudness target above. The result goes in the project&apos;s exports folder, under Video.</p>
+          {ff && !ff.installed ? (
+            <Note>
+              This needs ffmpeg, a free video tool. Greenroom can download it once (about 115 MB) from its public release and checks it against a fixed fingerprint before using it.{" "}
+              <button className="sm" onClick={() => void getFfmpeg()} disabled={busy}>
+                Download ffmpeg
+              </button>
+            </Note>
+          ) : (
+            <div className="row wrap">
+              <label className="row small">
+                <input type="checkbox" checked={keepOriginal} onChange={(e) => setKeepOriginal(e.target.checked)} /> Keep the video&apos;s own sound as a second track
+              </label>
+              <span className="spacer" />
+              <button className="primary" onClick={() => void writeVideo()} disabled={busy || !ff || plan.items.length === 0}>
+                Write the video
+              </button>
+            </div>
+          )}
+          {ff?.source === "system" && <p className="muted small">Using the copy of ffmpeg already on this computer.</p>}
+          {videoOut && (
+            <p className="small" aria-live="polite">
+              Saved with {videoOut.codec} sound.{" "}
+              <button className="sm" onClick={() => void reveal(videoOut.path)}>
+                Show in folder
+              </button>
+            </p>
+          )}
+          <p className="muted small">The sound is stored as AAC for MP4, 24-bit PCM for MOV, and lossless FLAC for other types. The start timecode of the original video is not carried into the new file.</p>
         </div>
       )}
 

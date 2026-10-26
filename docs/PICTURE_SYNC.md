@@ -26,3 +26,6 @@ Work to a video: place each line at an exact timecode, listen to the sound with 
 - **Variable frame rate files** are treated as their most common frame rate.
 - Preview sync depends on the computer; the player is the system's WebView2.
 - Per-scene exports ignore cues and run in order from zero.
+
+## Writing a video with the mix (v0.9)
+On the Export screen, with a picture set, **Write the video** makes a copy of the video with the Greenroom mix as its sound. See docs/VIDEO_MIX.md.

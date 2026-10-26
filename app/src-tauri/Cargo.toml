@@ -1,6 +1,6 @@
 [package]
 name = "greenroom"
-version = "0.8.0"
+version = "0.9.0"
 description = "Greenroom: direct lifelike AI voice performances"
 edition = "2021"
 publish = false
