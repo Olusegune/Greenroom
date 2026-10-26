@@ -4,7 +4,8 @@ import { applySuggestion, describe, isDirected, parseDirector, systemPrompt, use
 import { applyPreset, chosenTake, EMOTIONS, PRESETS, SOUNDS, toggleIn, vkUnsupported } from "../direct";
 import { VisualLine } from "../VisualLine";
 import { api } from "../api";
-import { ENGINES, qualityFormat, soundEngineOf } from "../engines";
+import { Avatar } from "../avatar";
+import { ENGINES, ENGINE_ORDER, qualityFormat, soundEngineOf } from "../engines";
 import { makeSound, makeTake, modelLabel, plan, type Model } from "../generate";
 import { Plus, Play, Sparkle, Stop, Trash } from "../icons";
 import { stopPlayback, takeUrl } from "../media";
@@ -156,7 +157,7 @@ export default function Perform() {
         </div>
         <div className="stack" style={{ minWidth: 220 }}>
           <label className="field">
-            ElevenLabs model
+            ElevenLabs model (for ElevenLabs voices; each line picks its own engine below)
             <select value={model} onChange={(e) => setModel(e.target.value as Model)}>
               <option value="eleven_v4">Eleven v4 (newest, best)</option>
               <option value="eleven_v3">Eleven v3</option>
@@ -309,7 +310,7 @@ function DirectorReview({ result, onClose }: { result: DirectorResult; onClose: 
 }
 
 function LineCard({ line, index, character, voice, model, dict, patch, make }: { line: Line; index: number; character?: Character; voice?: VoiceEntry; model: Model; dict: Pronunciation[]; patch: (fn: (l: Line) => Line) => void; make: (l: Line, n?: number) => Promise<boolean> }) {
-  const { project, confirmSpend, toast, engines, priceLines, addLedger } = useApp();
+  const { project, confirmSpend, toast, engines, priceLines, addLedger, library, edit, go: goTo } = useApp();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [editText, setEditText] = useState(false);
@@ -347,8 +348,30 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
     <div className="linecard">
       <div className="row between">
         <span>
-          <span className="muted num small">{index}</span> <span className="speaker">{character?.name ?? "?"}</span>
-          {voice && <span className="muted small"> · {voice.name}</span>}
+          <span className="muted num small">{index}</span> <Avatar seed={(voice?.id ?? character?.id ?? "x") + (voice?.name ?? character?.name ?? "")} gender={voice?.gender} size={30} /> <span className="speaker">{character?.name ?? "?"}</span>
+          {character && library.length > 0 && (
+            <select
+              className="voice-switch"
+              aria-label={`Voice and engine for ${character.name}`}
+              value={voice?.id ?? ""}
+              onChange={(e) => {
+                if (e.target.value === "__more") return goTo("voices");
+                if (e.target.value) edit((p) => ({ ...p, characters: p.characters.map((c) => (c.id === character.id ? { ...c, voiceId: e.target.value } : c)) }));
+              }}
+            >
+              {!voice && <option value="">Choose a voice…</option>}
+              {ENGINE_ORDER.filter((en) => library.some((v) => v.provider === en)).map((en) => (
+                <optgroup key={en} label={ENGINES[en].label}>
+                  {library.filter((v) => v.provider === en).map((v) => (
+                    <option key={v.provider + v.id} value={v.id}>
+                      {v.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+              <option value="__more">More engines and voices…</option>
+            </select>
+          )}
         </span>
         {chosen ? <span className="badge ok">{line.takes.length} take{line.takes.length === 1 ? "" : "s"}</span> : <span className="badge">no take yet</span>}
       </div>
@@ -446,6 +469,31 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
           </button>
         </div>
       ))}
+      {!voice && (
+        <div className="voice-needed" role="group" aria-label="Choose a voice for this line">
+          <span>
+            <strong>{character?.name ?? "This character"}</strong> needs a voice before you can make a take.
+          </span>
+          {library.length > 0 && character ? (
+            <select
+              aria-label={`Voice for ${character.name}`}
+              value=""
+              onChange={(e) => e.target.value && edit((p) => ({ ...p, characters: p.characters.map((c) => (c.id === character.id ? { ...c, voiceId: e.target.value } : c)) }))}
+            >
+              <option value="">Choose a voice…</option>
+              {library.map((v) => (
+                <option key={v.provider + v.id} value={v.id}>
+                  {v.name} · {ENGINES[v.provider].label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <button className="sm primary" onClick={() => goTo("voices")}>
+              Find or make a voice
+            </button>
+          )}
+        </div>
+      )}
       <div className="row wrap">
         <button className="primary sm" disabled={busy || !voice} onClick={() => void go(1)}>
           {busy ? "Working…" : line.takes.length ? "Another take" : "Make a take"}

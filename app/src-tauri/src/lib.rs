@@ -364,6 +364,32 @@ async fn music_generate(app: tauri::AppHandle, project: String, req: kie::MusicR
 }
 
 #[tauri::command]
+fn sheet_load(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(store::sheet_load(&root(&app)?))
+}
+
+#[tauri::command]
+fn sheet_save(app: tauri::AppHandle, json: String) -> Result<(), String> {
+    store::sheet_save(&root(&app)?, &json)
+}
+
+#[tauri::command]
+fn sheet_audio_write(app: tauri::AppHandle, id: String, audio_b64: String) -> Result<(), String> {
+    store::sheet_audio_write(&root(&app)?, &id, &unb64(&audio_b64)?)
+}
+
+#[tauri::command]
+fn sheet_audio_read(app: tauri::AppHandle, id: String) -> Result<Audio, String> {
+    let bytes = store::sheet_audio_read(&root(&app)?, &id)?;
+    Ok(Audio { mime: net::mime_of(&bytes).into(), audio_b64: b64(&bytes) })
+}
+
+#[tauri::command]
+fn sheet_export(app: tauri::AppHandle, filename: String, text: String) -> Result<String, String> {
+    Ok(store::sheet_export(&root(&app)?, &filename, &text)?.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
 fn casts_load(app: tauri::AppHandle) -> Result<String, String> {
     Ok(store::casts_load(&root(&app)?))
 }
@@ -498,7 +524,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             key_status, set_key, clear_key, run_clip, voices_mine, voices_voicekiller, voices_shared, voice_add_shared, voice_design, voice_design_save, voice_clone,
-            voice_delete, preview_fetch, project_list, project_load, project_save, take_write, take_read, export_write, library_load, library_save, casts_load, casts_save,
+            voice_delete, preview_fetch, project_list, project_load, project_save, take_write, take_read, export_write, library_load, library_save, casts_load, casts_save, sheet_load, sheet_save, sheet_audio_write, sheet_audio_read, sheet_export,
             save_report, audio_import, music_generate, ffmpeg_status, ffmpeg_install, video_mux, video_probe, video_allow, director_complete, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
         ])
         .run(tauri::generate_context!())

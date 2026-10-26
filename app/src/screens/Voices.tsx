@@ -10,24 +10,29 @@ import { fromBase64 } from "../audio";
 import type { Consent, ConsentBasis, LicenceUse, VoiceEntry } from "../types";
 import { BASIS_LABEL, LICENCE_LABEL, rightsFor } from "../trust";
 import { Empty, Note, PlayButton, Tabs, useBusy } from "../ui";
+import { Avatar } from "../avatar";
+import AccentSheet from "./AccentSheet";
+import { DESIGN_ACCENTS } from "../accents";
 import { useSample, voiceLine } from "../useSample";
 
-type TabId = "mine" | "find" | "design" | "clone";
+type TabId = "mine" | "find" | "design" | "clone" | "accents";
 const now = () => new Date().toISOString();
 
 export default function Voices() {
   const [tab, setTab] = useState<TabId>("mine");
+  const add = useAdd();
   return (
     <section>
       <div>
         <h1>Voices</h1>
         <p className="lede">Your library of voices from every engine. Every character in any project picks from here.</p>
       </div>
-      <Tabs<TabId> value={tab} onChange={setTab} items={[["mine", "My library"], ["find", "Find a voice"], ["design", "Design a voice"], ["clone", "Clone a voice"]]} />
+      <Tabs<TabId> value={tab} onChange={setTab} items={[["mine", "My library"], ["find", "Find a voice"], ["design", "Design a voice"], ["clone", "Clone a voice"], ["accents", "Accent test"]]} />
       {tab === "mine" && <Mine goFind={() => setTab("find")} />}
       {tab === "find" && <Find />}
       {tab === "design" && <Design />}
       {tab === "clone" && <Clone />}
+      {tab === "accents" && <AccentSheet add={add} />}
     </section>
   );
 }
@@ -42,6 +47,16 @@ function useAdd() {
     saveLibrary((l) => (l.some((x) => x.id === v.id && x.provider === v.provider) ? l : [...l, { notes: "", createdAt: now(), ...v }]));
     toast(`${v.name} added to your library.`);
   };
+}
+
+/** "Fiona - chill, natural, real" becomes the name Fiona and the line "chill, natural, real". */
+function shortName(name: string): string {
+  const m = name.split(/\s+[-–—:|]\s+/)[0]?.trim();
+  return m && m.length >= 2 ? m : name;
+}
+function tagline(v: VoiceEntry): string {
+  const rest = v.name.split(/\s+[-–—:|]\s+/).slice(1).join(" · ").trim();
+  return rest || v.notes.trim().slice(0, 90) || "No description yet";
 }
 
 function Mine({ goFind }: { goFind: () => void }) {
@@ -118,25 +133,28 @@ function Mine({ goFind }: { goFind: () => void }) {
       ) : (
         <div className="grid">
           {shown.map((v) => (
-            <div key={v.provider + v.id} className="card voice-card">
-              <div className="row between top">
-                <h2>{v.name}</h2>
-                <span className="badge accent">{ENGINES[v.provider].label}</span>
-              </div>
-              <div className="meta">{voiceLine(v) && <span className="badge">{voiceLine(v)}</span>}</div>
-              <input type="text" aria-label={`Notes for ${v.name}`} placeholder="Notes, for example: good for Ada's older sister" value={v.notes} onChange={(e) => patch(v.id, v.provider, { notes: e.target.value })} />
-              {usedBy(v).length > 0 && (
-                <div className="meta">
-                  {usedBy(v).map((n) => (
-                    <span key={n} className="badge ok">
-                      Voice of {n}
-                    </span>
-                  ))}
+            <div key={v.provider + v.id} className={usedBy(v).length ? "card voice-card vc lit" : "card voice-card vc"}>
+              <div className="vc-top">
+                <span className="vc-face">
+                  <Avatar seed={v.id + v.name} gender={v.gender} size={72} />
+                  <PlayButton round label={`Hear ${shortName(v.name)}`} get={() => sample(v)} />
+                </span>
+                <div className="vc-id">
+                  <h2 title={v.name}>{shortName(v.name)}</h2>
+                  <p className="vc-tag">{tagline(v)}</p>
                 </div>
-              )}
-              <RightsEditor v={v} onChange={(p) => patch(v.id, v.provider, p)} />
+              </div>
+              <div className="vc-chips">
+                <span className="badge accent">{ENGINES[v.provider].label}</span>
+                {voiceLine(v) && <span className="badge">{voiceLine(v)}</span>}
+                {usedBy(v).map((n) => (
+                  <span key={n} className="badge ok">
+                    Voice of {n}
+                  </span>
+                ))}
+              </div>
               {project && speakers.length > 0 ? (
-                <select aria-label={`Use ${v.name} for a character`} value="" onChange={(e) => e.target.value && useFor(v, e.target.value)}>
+                <select className="vc-use" aria-label={`Use ${v.name} for a character`} value="" onChange={(e) => e.target.value && useFor(v, e.target.value)}>
                   <option value="">Use this voice for…</option>
                   {speakers.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -154,31 +172,39 @@ function Mine({ goFind }: { goFind: () => void }) {
                   Open a project to use this voice
                 </button>
               )}
-              <div className="row wrap">
-                <PlayButton label="Hear it" get={() => sample(v)} />
-                <span className="spacer" />
-                {sure === v.provider + v.id ? (
-                  <>
-                    <button className="sm danger" onClick={() => void deleteRemote(v)}>
-                      Really delete
-                    </button>
-                    <button className="sm ghost" onClick={() => setSure("")}>
-                      Keep
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {v.provider === "elevenlabs" && (v.source === "designed" || v.source === "cloned") && (
-                      <button className="sm ghost" onClick={() => setSure(v.provider + v.id)} title="Also deletes it from your ElevenLabs account">
-                        Delete from ElevenLabs
-                      </button>
+              <details className="vc-more">
+                <summary>
+                  More <span className={rightsFor(v, []).level === "clear" ? "dot ok" : "dot warn"} title={rightsFor(v, []).level === "clear" ? "Rights clear" : "Rights to review"} />
+                </summary>
+                <div className="stack">
+                  <input type="text" aria-label={`Notes for ${v.name}`} placeholder="Notes, for example: good for Ada's older sister" value={v.notes} onChange={(e) => patch(v.id, v.provider, { notes: e.target.value })} />
+                  <RightsEditor v={v} onChange={(p) => patch(v.id, v.provider, p)} />
+                  <div className="row wrap">
+                    <span className="spacer" />
+                    {sure === v.provider + v.id ? (
+                      <>
+                        <button className="sm danger" onClick={() => void deleteRemote(v)}>
+                          Really delete
+                        </button>
+                        <button className="sm ghost" onClick={() => setSure("")}>
+                          Keep
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {v.provider === "elevenlabs" && (v.source === "designed" || v.source === "cloned") && (
+                          <button className="sm ghost" onClick={() => setSure(v.provider + v.id)} title="Also deletes it from your ElevenLabs account">
+                            Delete from ElevenLabs
+                          </button>
+                        )}
+                        <button className="sm ghost" aria-label={`Remove ${v.name} from the library`} onClick={() => remove(v)}>
+                          <Trash size={15} /> Remove from library
+                        </button>
+                      </>
                     )}
-                    <button className="sm icon ghost" aria-label={`Remove ${v.name} from the library`} onClick={() => remove(v)}>
-                      <Trash size={15} />
-                    </button>
-                  </>
-                )}
-              </div>
+                  </div>
+                </div>
+              </details>
             </div>
           ))}
         </div>
@@ -396,20 +422,6 @@ const EXAMPLES = [
   "A young Lagos woman, bright and quick, with a teasing laugh in her voice",
   "A gentle Korean grandmother, soft and a little shaky, kind",
   "A tired British detective, dry and low, weary after a long night",
-];
-
-/** Accents to build into a description. The wording is what the designer model is told; whether it sounds right is for the owner's ear. */
-const DESIGN_ACCENTS: { label: string; phrase: string }[] = [
-  { label: "Nigerian English (Yoruba)", phrase: "speaks English with a Yoruba-influenced Nigerian accent" },
-  { label: "Nigerian English (Igbo)", phrase: "speaks English with an Igbo-influenced Nigerian accent" },
-  { label: "Nigerian English (Hausa)", phrase: "speaks English with a Hausa-influenced Nigerian accent" },
-  { label: "Nigerian Pidgin", phrase: "speaks Nigerian Pidgin English with a natural Lagos street rhythm" },
-  { label: "Ghanaian English", phrase: "speaks English with a Ghanaian accent" },
-  { label: "Filipino English", phrase: "speaks English with a Filipino accent" },
-  { label: "Indian English", phrase: "speaks English with an Indian accent" },
-  { label: "Jamaican English", phrase: "speaks English with a Jamaican accent" },
-  { label: "South African English", phrase: "speaks English with a South African accent" },
-  { label: "Scottish English", phrase: "speaks English with a Scottish accent" },
 ];
 
 function Design() {

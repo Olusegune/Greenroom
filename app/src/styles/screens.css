@@ -72,3 +72,6 @@
 .tl-handle.l { left: 0; }
 .tl-handle.r { right: 0; }
 .tl-head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--err); pointer-events: none; z-index: 6; box-shadow: 0 0 6px rgba(255, 138, 128, 0.6); }
+
+.voice-needed { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 10px 12px; border: 1px dashed var(--warn, #e9b85c); border-radius: var(--r-ctl); background: color-mix(in srgb, var(--warn, #e9b85c) 8%, transparent); font-size: var(--fs-sm); }
+.voice-needed select { min-width: 220px; }

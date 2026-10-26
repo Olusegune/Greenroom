@@ -23,7 +23,7 @@ export function Empty({ title, children, action }: { title: string; children?: R
 }
 
 /** A play / stop button for a sound that is fetched only when pressed. */
-export function PlayButton({ get, label = "Play", disabled }: { get: () => Promise<string>; label?: string; disabled?: boolean }) {
+export function PlayButton({ get, label = "Play", disabled, round }: { get: () => Promise<string>; label?: string; disabled?: boolean; round?: boolean }) {
   const [state, setState] = useState<"idle" | "loading" | "playing">("idle");
   const alive = useRef(true);
   useEffect(() => () => void (alive.current = false), []);
@@ -39,6 +39,12 @@ export function PlayButton({ get, label = "Play", disabled }: { get: () => Promi
       if (alive.current) setState("idle");
     }
   };
+  if (round)
+    return (
+      <button className={state === "playing" ? "play-round on" : "play-round"} onClick={click} disabled={disabled || state === "loading"} aria-label={state === "playing" ? `Stop ${label}` : label} title={label}>
+        {state === "loading" ? <span aria-hidden="true">…</span> : state === "playing" ? <Stop size={14} /> : <Play size={14} />}
+      </button>
+    );
   return (
     <button className="sm" onClick={click} disabled={disabled || state === "loading"} aria-label={state === "playing" ? `Stop ${label}` : label}>
       {state === "playing" ? <Stop size={14} /> : <Play size={14} />}

@@ -3,6 +3,7 @@ import { api } from "../api";
 import { appliedSummary, applyCast, castFrom, type SavedCast } from "../cast";
 import { useApp } from "../ctx";
 import { ENGINES, ENGINE_ORDER, type Engine } from "../engines";
+import { Avatar } from "../avatar";
 import { Flag } from "../flags";
 import { ChevronRight } from "../icons";
 import { TILES, tileByName } from "../languages";
@@ -79,7 +80,10 @@ export default function Cast() {
           return (
             <div key={c.id} className={voice ? "card voice-card lit" : "card voice-card"}>
               <div className="row between">
-                <h2 className="speaker">{c.name}</h2>
+                <span className="row">
+                  <Avatar seed={(voice?.id ?? c.id) + (voice?.name ?? c.name)} gender={voice?.gender} size={44} />
+                  <h2 className="speaker">{c.name}</h2>
+                </span>
                 <span className={voice ? "badge ok" : "badge warn"}>{voice ? ENGINES[voice.provider].label : "No voice yet"}</span>
               </div>
               <label className="field">

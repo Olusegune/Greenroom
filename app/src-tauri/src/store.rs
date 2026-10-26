@@ -161,6 +161,47 @@ pub fn library_load(root: &Path) -> String {
     fs::read_to_string(root.join("voices.json")).unwrap_or_else(|_| "[]".into())
 }
 
+fn sheet_dir(root: &Path) -> PathBuf {
+    root.join("accent-sheet")
+}
+
+pub fn sheet_load(root: &Path) -> String {
+    fs::read_to_string(sheet_dir(root).join("sheet.json")).unwrap_or_else(|_| "{}".into())
+}
+
+pub fn sheet_save(root: &Path, json: &str) -> Result<(), String> {
+    if json.len() > 4 << 20 || !serde_json::from_str::<Value>(json).map(|v| v.is_object()).unwrap_or(false) {
+        return Err("The listening sheet data was not valid.".into());
+    }
+    atomic_write(&sheet_dir(root).join("sheet.json"), json.as_bytes())
+}
+
+/// One sample's audio, kept so it can be heard and rated later. The id is the sample's own, never a path.
+pub fn sheet_audio_write(root: &Path, id: &str, bytes: &[u8]) -> Result<(), String> {
+    if !valid_id(id) || bytes.is_empty() || bytes.len() > 16 << 20 {
+        return Err(bad("sample"));
+    }
+    atomic_write(&sheet_dir(root).join(format!("{id}.mp3")), bytes)
+}
+
+pub fn sheet_audio_read(root: &Path, id: &str) -> Result<Vec<u8>, String> {
+    if !valid_id(id) {
+        return Err(bad("sample"));
+    }
+    fs::read(sheet_dir(root).join(format!("{id}.mp3"))).map_err(|_| "That sample is missing from the listening sheet folder.".to_string())
+}
+
+/// A report the owner exports from the sheet (Markdown or CSV), saved beside the samples.
+pub fn sheet_export(root: &Path, filename: &str, text: &str) -> Result<PathBuf, String> {
+    let name = safe_filename(filename).ok_or_else(|| bad("file name"))?;
+    if !(name.ends_with(".md") || name.ends_with(".csv")) || text.len() > 1 << 20 {
+        return Err(bad("report"));
+    }
+    let path = sheet_dir(root).join("reports").join(name);
+    atomic_write(&path, text.as_bytes())?;
+    Ok(path)
+}
+
 pub fn casts_load(root: &Path) -> String {
     fs::read_to_string(root.join("casts.json")).unwrap_or_else(|_| "[]".into())
 }
@@ -187,6 +228,27 @@ mod tests {
         let p = std::env::temp_dir().join(format!("greenroom-test-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         p
+    }
+
+    #[test]
+    fn the_listening_sheet_keeps_data_audio_and_reports_without_trusting_names() {
+        let r = std::env::temp_dir().join(format!("greenroom-sheet-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&r);
+        assert_eq!(sheet_load(&r), "{}");
+        sheet_save(&r, r#"{"samples":[]}"#).unwrap();
+        assert_eq!(sheet_load(&r), r#"{"samples":[]}"#);
+        assert!(sheet_save(&r, "[]").is_err());
+        sheet_audio_write(&r, "as-abc1", b"ID3audio").unwrap();
+        assert_eq!(sheet_audio_read(&r, "as-abc1").unwrap(), b"ID3audio");
+        assert!(sheet_audio_write(&r, "../x", b"a").is_err());
+        assert!(sheet_audio_write(&r, "ok", b"").is_err());
+        assert!(sheet_audio_read(&r, "a/b").is_err());
+        assert!(sheet_audio_read(&r, "nothere").is_err());
+        let p = sheet_export(&r, "Accent sheet.csv", "a,b").unwrap();
+        assert_eq!(fs::read_to_string(p).unwrap(), "a,b");
+        assert!(sheet_export(&r, "evil.exe", "x").is_err());
+        assert!(sheet_export(&r, "../evil.md", "x").is_err());
+        let _ = fs::remove_dir_all(&r);
     }
 
     #[test]

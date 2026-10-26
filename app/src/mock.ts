@@ -13,6 +13,8 @@ const projects = new Map<string, Project>();
 const takes = new Map<string, { audioB64: string; mime: string }>();
 let library: VoiceEntry[] = [];
 let casts: SavedCast[] = [];
+let sheetJson = "{}";
+const sheetAudio = new Map<string, string>();
 let engines: Partial<EnginesCfg> = {};
 let piperInstalled = false;
 let ffmpegInstalled = false;
@@ -84,6 +86,11 @@ export const mock: Api = {
   exportWrite: async (_p, folder, filename) => `C:\\Users\\you\\Documents\\Greenroom\\projects\\demo\\exports\\${folder ? folder + "\\" : ""}${filename}`,
   libraryLoad: async () => structuredClone(library),
   librarySave: async (v) => void (library = structuredClone(v)),
+  sheetLoad: async () => sheetJson,
+  sheetSave: async (json: string) => void (sheetJson = json),
+  sheetAudioWrite: async (id: string, audioB64: string) => void sheetAudio.set(id, audioB64),
+  sheetAudioRead: async (id: string) => ({ audioB64: sheetAudio.get(id) ?? tone(1, 300), mime: "audio/wav" }),
+  sheetExport: async (filename: string) => `C:\\Users\\you\\Documents\\Greenroom\\accent-sheet\\reports\\${filename}`,
   castsLoad: async () => structuredClone(casts),
   castsSave: async (c: SavedCast[]) => void (casts = structuredClone(c)),
   enginesLoad: async () => structuredClone(engines),
