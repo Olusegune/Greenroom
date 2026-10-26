@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { api, inApp } from "../api";
-import { encodeWav, fmtTime, lineFileName, renderPlan, stemSets, textBase64, toBase64, type Plan } from "../audio";
+import { encodeWav, fmtTime, fromBase64, lineFileName, renderPlan, stemSets, textBase64, toBase64, type Plan } from "../audio";
 import { useApp } from "../ctx";
 import { chosenTake } from "../direct";
 import { qualityFormat } from "../engines";
 import { makeSound } from "../generate";
 import { applyGain, fmtDb, fmtLufs, measure, planNormalization, TARGETS, type Measure } from "../loudness";
 import { audacityLabels, buildMarkers, cueSheetCsv, otioTimeline } from "../markers";
+import { productionReportMd, projectRights, rightsCsv, rightsSummary, sha256Hex } from "../trust";
+import { APP_VERSION } from "../version";
 import { stopPlayback, takeAudio, takeBuffer, takeUrl } from "../media";
 import { audioPlan } from "../preview";
 import { DEFAULT_EXPORT, type ExportCfg } from "../types";
@@ -16,7 +18,7 @@ import { Empty, Note, PlayButton, useBusy } from "../ui";
 const RATES: ExportCfg["rate"][] = [44100, 48000, 96000];
 
 export default function Export() {
-  const { project, edit, confirmSpend, toast, go, keys, engines } = useApp();
+  const { project, edit, confirmSpend, toast, go, keys, engines, library, priceLines, addLedger } = useApp();
   const { busy, run } = useBusy();
   const [made, setMade] = useState<string[]>([]);
   const [bedSecs, setBedSecs] = useState(12);
@@ -55,11 +57,13 @@ export default function Export() {
 
   const makeBed = async () => {
     if (!project.bed.prompt.trim()) return;
-    const ok = await confirmSpend({ title: "Make the atmosphere?", lines: [`"${project.bed.prompt.trim()}", ${bedSecs} seconds, looped under the scene`, "Uses ElevenLabs sound-effect credits"] });
+    const price = priceLines([{ kind: "sound", count: 1 }]);
+    const ok = await confirmSpend({ title: "Make the atmosphere?", lines: [`"${project.bed.prompt.trim()}", ${bedSecs} seconds, looped under the scene`, "Uses ElevenLabs sound-effect credits", ...price.lines], warn: price.warn });
     if (!ok) return;
     await run(async () => {
       try {
         const t = await makeSound(project.id, project.bed.prompt.trim(), bedSecs, qualityFormat(engines.quality));
+        addLedger({ kind: "sound", engine: "ElevenLabs sound effects", chars: project.bed.prompt.trim().length, items: [{ kind: "sound", count: 1 }], note: "atmosphere" });
         edit((p) => ({ ...p, bed: { ...p.bed, take: t } }));
       } catch (e) {
         toast((e as Error).message, true);
@@ -87,9 +91,11 @@ export default function Export() {
       const out: string[] = [];
       const written: Record<string, string> = {};
       const wav = (markers?: { sec: number; name: string }[]) => ({ bits: cfg.bits, dither: cfg.bits === 16, markers, description: project.name, originator: "Greenroom" });
+      const hashes: string[] = [];
       const save = async (folder: string, name: string, b64: string) => {
         const p = await api.exportWrite(project.id, folder, name, b64);
         out.push(p);
+        if (cfg.manifest) hashes.push(`${await sha256Hex(fromBase64(b64))} *${folder ? folder + "/" : ""}${name}`);
         return p;
       };
       try {
@@ -139,8 +145,14 @@ export default function Export() {
           }
         }
         if (cfg.labels) await save("", `${stem} - markers.txt`, textBase64(audacityLabels(buildMarkers(project, plan))));
-        if (cfg.cueSheet) await save("", `${stem} - cue sheet.csv`, textBase64(cueSheetCsv(project, plan, cfg.fps)));
+        if (cfg.cueSheet) await save("", `${stem} - cue sheet.csv`, textBase64(cueSheetCsv(project, plan, cfg.fps, library)));
         if (cfg.otio) await save("", `${stem}.otio`, textBase64(otioTimeline(project, plan, cfg.fps, written)));
+        if (cfg.report) {
+          const now = new Date().toISOString().slice(0, 16).replace("T", " ");
+          await save("", `${stem} - production report.md`, textBase64(productionReportMd({ project, library, prices: engines.prices, appVersion: APP_VERSION, now })));
+          await save("", `${stem} - rights register.csv`, textBase64(rightsCsv(projectRights(project, library))));
+        }
+        if (cfg.manifest && hashes.length) await save("", `${stem} - manifest.sha256.txt`, textBase64(hashes.join("\n") + "\n"));
 
         setMade(out);
         setReport(
@@ -183,6 +195,14 @@ export default function Export() {
         <h1>Export</h1>
         <p className="lede">Mixes your chosen takes in order, with the levels, pauses and sound clips you set, and saves them in Documents\Greenroom. Choose the format, loudness and handoff files below.</p>
       </div>
+      {rightsSummary(projectRights(project, library)).missing > 0 && (
+        <Note kind="warn">
+          {rightsSummary(projectRights(project, library)).missing} cloned voice{rightsSummary(projectRights(project, library)).missing === 1 ? " has" : "s have"} no consent record. You can still export; the production report will list it.{" "}
+          <button className="sm" onClick={() => go("voices")}>
+            Add it in Voices
+          </button>
+        </Note>
+      )}
       {missing.length > 0 && (
         <Note kind="warn">
           {missing.length} line{missing.length === 1 ? " has" : "s have"} no take and will be left out.{" "}
@@ -302,6 +322,9 @@ export default function Export() {
         {check("labels", "A label track (.txt)", "Imports into Audacity and Reaper.")}
         {check("cueSheet", "A cue sheet (.csv)", "Every line with its timecode, voice, model and text.")}
         {check("otio", "A timeline for editors (.otio)", "A track for each stem with clips at their exact times. Includes the original files it points to.")}
+        <h3 style={{ marginTop: 8 }}>For producers and legal</h3>
+        {check("report", "Production report and rights register", "AI disclosure, voices and consent, estimated cost, every take with its fingerprint.")}
+        {check("manifest", "Integrity manifest", "The SHA-256 of every file saved, so a changed file can be spotted later.")}
         {cfg.otio || cfg.cueSheet ? (
           <label className="field" style={{ maxWidth: 220 }}>
             Frame rate for timecode
@@ -318,7 +341,7 @@ export default function Export() {
           {plan.items.filter((i) => i.kind === "speech").length} lines, about {fmtTime(plan.total)} long.
         </p>
         <div className="row wrap">
-          <button className="primary" disabled={busy || plan.items.length === 0 || !(cfg.whole || cfg.scenes || cfg.stems || cfg.lines || cfg.labels || cfg.cueSheet || cfg.otio)} onClick={() => void doExport()}>
+          <button className="primary" disabled={busy || plan.items.length === 0 || !(cfg.whole || cfg.scenes || cfg.stems || cfg.lines || cfg.labels || cfg.cueSheet || cfg.otio || cfg.report)} onClick={() => void doExport()}>
             {busy ? "Exporting…" : "Export"}
           </button>
           <button

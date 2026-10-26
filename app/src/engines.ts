@@ -52,13 +52,29 @@ export const QUALITIES: { id: Quality; label: string; format: string; note: stri
 
 export const qualityFormat = (q: Quality | undefined): string => QUALITIES.find((x) => x.id === q)?.format ?? "mp3_44100_128";
 
+/**
+ * What the owner pays, as entered by them: Greenroom cannot see a price. Zero or missing means unknown, and then only
+ * characters are counted. Offline engines are always free.
+ */
+export interface Prices {
+  currency: string;
+  /** Cost per 1,000 characters, by engine. */
+  perKChars: Partial<Record<Engine, number>>;
+  sfxClip: number;
+  directorCall: number;
+  designPreview: number;
+}
+
+export const DEFAULT_PRICES: Prices = { currency: "USD", perKChars: {}, sfxClip: 0, directorCall: 0, designPreview: 0 };
+
 export interface EnginesCfg {
   elevenModel: ElevenModel;
   quality: Quality;
+  prices: Prices;
   localServer: { url: string; model: string };
 }
 
-export const DEFAULT_ENGINES_CFG: EnginesCfg = { elevenModel: "eleven_v4", quality: "standard", localServer: { url: "http://127.0.0.1:8880", model: "kokoro" } };
+export const DEFAULT_ENGINES_CFG: EnginesCfg = { elevenModel: "eleven_v4", quality: "standard", prices: DEFAULT_PRICES, localServer: { url: "http://127.0.0.1:8880", model: "kokoro" } };
 
 /** Kie's preset voices for ElevenLabs Turbo 2.5 (from Kie's docs, 2026-10-26). Names repeat, so the id is what counts. */
 export const KIE_VOICES: { id: string; name: string; style: string }[] = [

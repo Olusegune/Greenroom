@@ -2,15 +2,18 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api, type KeyStatus } from "./api";
 import { newProject, type Project, type VoiceEntry } from "./types";
 import { uid } from "./script";
-import { DEFAULT_ENGINES_CFG, type EnginesCfg } from "./engines";
+import { DEFAULT_ENGINES_CFG, DEFAULT_PRICES, type EnginesCfg } from "./engines";
+import { estimateCost, spendLines, type SpendItem } from "./trust";
 
-export type Tab = "home" | "write" | "cast" | "perform" | "export" | "voices" | "engines" | "lab" | "settings";
+export type Tab = "home" | "write" | "cast" | "perform" | "export" | "studio" | "voices" | "engines" | "lab" | "settings";
 
 export interface SpendAsk {
   title: string;
   lines: string[];
   /** When set, the sheet offers "do not ask again this session" for this kind of single action. */
   skipKey?: string;
+  /** Shown in red when the work would pass the project budget. The owner can still go ahead. */
+  warn?: string;
   /** A file download rather than a paid call: different words, no credits mentioned. */
   download?: boolean;
 }
@@ -32,6 +35,10 @@ interface Ctx {
   edit: (fn: (p: Project) => Project) => void;
   toast: (text: string, bad?: boolean) => void;
   confirmSpend: (a: SpendAsk) => Promise<boolean>;
+  /** Cost lines and any over-budget warning for work about to be paid for, to add to a confirmation sheet. */
+  priceLines: (items: SpendItem[]) => { lines: string[]; warn?: string };
+  /** Record paid work in the project ledger, with an estimated cost from the owner's prices. */
+  addLedger: (e: { kind: "speech" | "sound" | "director" | "design" | "sample"; engine: string; chars: number; items: SpendItem[]; note?: string }) => void;
 }
 
 const C = createContext<Ctx | null>(null);
@@ -140,13 +147,24 @@ export function Provider({ children }: { children: ReactNode }) {
   }, []);
 
   const confirmSpend = useCallback((a: SpendAsk) => {
-    if (a.skipKey && skipped.current.has(a.skipKey)) return Promise.resolve(true);
+    // A budget warning is never skipped, even if the owner chose not to be asked again for single items.
+    if (a.skipKey && !a.warn && skipped.current.has(a.skipKey)) return Promise.resolve(true);
     return new Promise<boolean>((resolve) => setAsk({ a, done: resolve }));
   }, []);
 
+  const priceLines = useCallback((items: SpendItem[]) => spendLines(engines.prices ?? DEFAULT_PRICES, items, project?.budget, project?.ledger), [engines.prices, project?.budget, project?.ledger]);
+
+  const addLedger = useCallback(
+    (e: { kind: "speech" | "sound" | "director" | "design" | "sample"; engine: string; chars: number; items: SpendItem[]; note?: string }) => {
+      const cost = estimateCost(engines.prices ?? DEFAULT_PRICES, e.items).cost;
+      edit((p) => ({ ...p, ledger: [...(p.ledger ?? []), { at: new Date().toISOString(), kind: e.kind, engine: e.engine, chars: e.chars, cost, note: e.note }] }));
+    },
+    [engines.prices, edit],
+  );
+
   const value = useMemo<Ctx>(
-    () => ({ tab, go: setTab, keys, refreshKeys, engines, saveEngines, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, toast, confirmSpend }),
-    [tab, keys, refreshKeys, engines, saveEngines, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, toast, confirmSpend],
+    () => ({ tab, go: setTab, keys, refreshKeys, engines, saveEngines, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, toast, confirmSpend, priceLines, addLedger }),
+    [tab, keys, refreshKeys, engines, saveEngines, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, toast, confirmSpend, priceLines, addLedger],
   );
 
   return (
@@ -173,6 +191,7 @@ function SpendSheet({ ask, onDone }: { ask: SpendAsk; onDone: (ok: boolean, skip
     <div className="scrim" role="presentation">
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="spend-t">
         <h2 id="spend-t">{ask.title}</h2>
+        {ask.warn && <p className="note err" role="alert">{ask.warn}</p>}
         <p className="muted">{ask.download ? "This downloads files to this computer. Nothing is sent from your project." : "This sends text to the provider and uses credits on your own account. Greenroom cannot see your price, so check your plan if unsure."}</p>
         <ul>
           {ask.lines.map((l) => (
@@ -187,7 +206,7 @@ function SpendSheet({ ask, onDone }: { ask: SpendAsk; onDone: (ok: boolean, skip
         <div className="row end" style={{ marginTop: 16 }}>
           <button onClick={() => onDone(false, false)}>Cancel</button>
           <button className="primary" autoFocus onClick={() => onDone(true, skip)}>
-            {ask.download ? "Download" : "Go ahead and use credits"}
+            {ask.download ? "Download" : ask.warn ? "Go over budget and continue" : "Go ahead and use credits"}
           </button>
         </div>
       </div>

@@ -8,6 +8,25 @@ export interface Character {
   language: string;
 }
 
+/** What produced a piece of audio, kept with it so a studio can answer "where did this come from?". */
+export interface Provenance {
+  engine: Engine;
+  voiceName: string;
+  /** The ElevenLabs output format that was asked for, when one applies. */
+  quality?: string;
+  speed: number;
+  instructions?: string;
+  /** Characters sent to the engine. */
+  chars: number;
+  /** SHA-256 of the audio file as saved, so a changed file can be spotted. */
+  sha256: string;
+  appVersion: string;
+  emotion: string;
+  sounds: string[];
+  note: string;
+  pronunciations: number;
+}
+
 export interface Take {
   id: string;
   at: string;
@@ -17,6 +36,7 @@ export interface Take {
   /** Exactly what was sent, tags included, so a take can always be explained. */
   sent: string;
   seconds: number;
+  provenance?: Provenance;
 }
 
 export interface SoundEvent {
@@ -24,7 +44,7 @@ export interface SoundEvent {
   prompt: string;
   placement: "before" | "after";
   seconds: number;
-  take?: { id: string; ext: "mp3" | "wav"; seconds: number };
+  take?: { id: string; ext: "mp3" | "wav"; seconds: number; sha256?: string; prompt?: string };
 }
 
 export interface Direction {
@@ -57,7 +77,7 @@ export interface Pronunciation {
 export interface Bed {
   prompt: string;
   volume: number;
-  take?: { id: string; ext: "mp3" | "wav"; seconds: number };
+  take?: { id: string; ext: "mp3" | "wav"; seconds: number; sha256?: string };
 }
 
 export interface ExportCfg {
@@ -76,9 +96,13 @@ export interface ExportCfg {
   labels: boolean;
   cueSheet: boolean;
   otio: boolean;
+  /** A production report and a rights register. */
+  report: boolean;
+  /** A list of the SHA-256 of every exported file. */
+  manifest: boolean;
 }
 
-export const DEFAULT_EXPORT: ExportCfg = { rate: 48000, bits: 24, target: "off", ceiling: -1, fps: 24, whole: true, scenes: false, lines: true, stems: false, markersInWav: true, labels: false, cueSheet: true, otio: false };
+export const DEFAULT_EXPORT: ExportCfg = { rate: 48000, bits: 24, target: "off", ceiling: -1, fps: 24, whole: true, scenes: false, lines: true, stems: false, markersInWav: true, labels: false, cueSheet: true, otio: false, report: true, manifest: true };
 
 export interface Project {
   version: 1;
@@ -93,8 +117,34 @@ export interface Project {
   /** Written form to spoken form, applied to the words sent to a voice, never to the script itself. */
   pronunciations: Pronunciation[];
   export?: Partial<ExportCfg>;
+  /** Spend limit for this project, in the currency set in Studio. */
+  budget?: number;
+  ledger?: LedgerEntry[];
   createdAt: string;
   updatedAt: string;
+}
+
+export type ConsentBasis = "self" | "permission" | "licence" | "designed" | "other";
+
+/** Who agreed to this voice being used, and on what basis. Required when a voice is cloned. */
+export interface Consent {
+  speaker: string;
+  basis: ConsentBasis;
+  /** A contract, email or release reference, if there is one. */
+  reference: string;
+  date: string;
+}
+
+export type LicenceUse = "unknown" | "commercial" | "personal";
+
+export interface LedgerEntry {
+  at: string;
+  kind: "speech" | "sound" | "director" | "design" | "sample";
+  engine: string;
+  chars: number;
+  /** Estimated cost from the prices the owner entered. Zero when no price is set. */
+  cost: number;
+  note?: string;
 }
 
 export interface VoiceEntry {
@@ -111,6 +161,10 @@ export interface VoiceEntry {
   notes: string;
   previewUrl?: string;
   createdAt: string;
+  consent?: Consent;
+  licence?: LicenceUse;
+  licenceNote?: string;
+  licenceChecked?: string;
 }
 
 export interface VoiceInfo {

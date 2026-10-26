@@ -53,6 +53,21 @@ describe("cue sheet", () => {
   });
 });
 
+describe("cue sheet provenance columns", () => {
+  it("adds engine, audio quality, fingerprint and voice rights at the end of each row", () => {
+    const p = project();
+    p.characters[0]!.voiceId = "voiceX";
+    p.lines[0]!.takes[0]!.provenance = { engine: "elevenlabs", voiceName: "Ada", quality: "wav_48000", speed: 1, chars: 12, sha256: "f".repeat(64), appVersion: "0.6.0", emotion: "", sounds: [], note: "", pronunciations: 0 };
+    const lib = [{ id: "voiceX", name: "Ada", provider: "elevenlabs" as const, source: "cloned" as const, language: "", accent: "", gender: "", notes: "", createdAt: "" }];
+    const csv = cueSheetCsv(p, planTimeline(p), 24, lib);
+    const rows = csv.trim().split("\r\n");
+    expect(rows[0]!.endsWith("Engine,Audio quality,SHA-256,Voice rights")).toBe(true);
+    expect(rows[1]!.endsWith(`ElevenLabs,wav_48000,${"f".repeat(64)},missing`)).toBe(true);
+    // A take made before provenance was recorded, with no voice chosen, leaves those cells empty.
+    expect(rows[2]!.endsWith(",,,")).toBe(true);
+  });
+});
+
 describe("OpenTimelineIO", () => {
   const files = { ta: "C:\\Users\\me\\Documents\\Greenroom\\a b.wav", tb: "C:\\x\\b.mp3", s1: "C:\\x\\door.mp3", bed1: "C:\\x\\rain.mp3" };
   it("turns Windows paths into file URLs", () => {

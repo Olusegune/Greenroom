@@ -12,9 +12,11 @@ import { audioPlan, previewScene } from "../preview";
 import { uid } from "../script";
 import type { Character, Line, Pronunciation, VoiceEntry } from "../types";
 import { Empty, Note, PlayButton } from "../ui";
+import { shortHash } from "../trust";
+import type { Take } from "../types";
 
 export default function Perform() {
-  const { project, edit, library, confirmSpend, toast, go, engines, saveEngines, keys } = useApp();
+  const { project, edit, library, confirmSpend, toast, go, engines, saveEngines, keys, priceLines, addLedger } = useApp();
   const model: Model = engines.elevenModel;
   const setModel = (m: Model) => saveEngines({ ...engines, elevenModel: m });
   const [running, setRunning] = useState<{ done: number; total: number } | null>(null);
@@ -44,13 +46,16 @@ export default function Perform() {
     const e = ENGINES[voice.provider];
     const extra: string[] = !e.tags && vkUnsupported(line).length ? [`${e.label} cannot make: ${vkUnsupported(line).join(", ")}. Those will be left out.`] : [];
     if (!e.local) {
-      const ok = await confirmSpend({ title: count > 1 ? `Make ${count} takes?` : "Make a take?", lines: [`${chars * count} characters (${count} take${count > 1 ? "s" : ""})`, `Voice: ${voice.name}`, ...extra], skipKey: count > 1 ? undefined : "take" });
+      const price = priceLines([{ kind: "speech", engine: voice.provider, chars: chars * count }]);
+      const ok = await confirmSpend({ title: count > 1 ? `Make ${count} takes?` : "Make a take?", lines: [`${chars * count} characters (${count} take${count > 1 ? "s" : ""})`, `Voice: ${voice.name}`, ...extra, ...price.lines], warn: price.warn, skipKey: count > 1 ? undefined : "take" });
       if (!ok) return false;
     }
     try {
       for (let i = 0; i < count; i++) {
         const t = await makeTake(project.id, line, voice, model, dict, qualityFormat(engines.quality));
         patchLine(line.id, (l) => ({ ...l, takes: [...l.takes, t], chosen: t.id }));
+        const sent = t.provenance?.chars ?? chars;
+        addLedger({ kind: "speech", engine: e.label, chars: sent, items: [{ kind: "speech", engine: voice.provider, chars: sent }] });
       }
       return true;
     } catch (e2) {
@@ -65,7 +70,8 @@ export default function Perform() {
     const paid = todo.filter((l) => !ENGINES[voiceOf(l)!.provider].local);
     if (paid.length > 0) {
       const s = spend(paid);
-      const ok = await confirmSpend({ title: "Make all the missing takes?", lines: [`${paid.length} lines, ${s.chars} characters${paid.length < todo.length ? ` (${todo.length - paid.length} more run offline, free)` : ""}`, `Voices: ${s.voices}`, "One take per line. You can make more later."] });
+      const price = priceLines(paid.map((l) => ({ kind: "speech" as const, engine: voiceOf(l)!.provider, chars: plan(l, voiceOf(l)!, model, dict).text.length })));
+      const ok = await confirmSpend({ title: "Make all the missing takes?", lines: [`${paid.length} lines, ${s.chars} characters${paid.length < todo.length ? ` (${todo.length - paid.length} more run offline, free)` : ""}`, `Voices: ${s.voices}`, "One take per line. You can make more later.", ...price.lines], warn: price.warn });
       if (!ok) return;
     }
     stop.current = false;
@@ -74,8 +80,11 @@ export default function Perform() {
       if (stop.current) break;
       const line = todo[i]!;
       try {
-        const t = await makeTake(project.id, line, voiceOf(line)!, model, dict, qualityFormat(engines.quality));
+        const v = voiceOf(line)!;
+        const t = await makeTake(project.id, line, v, model, dict, qualityFormat(engines.quality));
         patchLine(line.id, (l) => ({ ...l, takes: [...l.takes, t], chosen: t.id }));
+        const sent = t.provenance?.chars ?? 0;
+        addLedger({ kind: "speech", engine: ENGINES[v.provider].label, chars: sent, items: [{ kind: "speech", engine: v.provider, chars: sent }] });
       } catch (e) {
         toast(`Stopped at line ${project.lines.indexOf(line) + 1}: ${(e as Error).message}`, true);
         break;
@@ -103,11 +112,13 @@ export default function Perform() {
 
   const askDirector = async () => {
     const chars = userPrompt(project).length + systemPrompt().length;
-    const ok = await confirmSpend({ title: "Ask the AI Director?", lines: [`Sends your script (${project.lines.length} lines, about ${chars} characters) to a Kie text model`, "It only suggests. You review everything before anything changes.", "Uses a small amount of Kie credit"] });
+    const price = priceLines([{ kind: "director" }]);
+    const ok = await confirmSpend({ title: "Ask the AI Director?", lines: [`Sends your script (${project.lines.length} lines, about ${chars} characters) to a Kie text model`, "It only suggests. You review everything before anything changes.", "Uses a small amount of Kie credit", ...price.lines], warn: price.warn });
     if (!ok) return;
     setThinking(true);
     try {
       const reply = await api.directorComplete(systemPrompt(), userPrompt(project));
+      addLedger({ kind: "director", engine: "Kie text model", chars, items: [{ kind: "director" }] });
       setReview(parseDirector(reply, project.lines.map((l) => l.id)));
     } catch (e) {
       toast((e as Error).message, true);
@@ -298,7 +309,7 @@ function DirectorReview({ result, onClose }: { result: DirectorResult; onClose: 
 }
 
 function LineCard({ line, index, character, voice, model, dict, patch, make }: { line: Line; index: number; character?: Character; voice?: VoiceEntry; model: Model; dict: Pronunciation[]; patch: (fn: (l: Line) => Line) => void; make: (l: Line, n?: number) => Promise<boolean> }) {
-  const { project, confirmSpend, toast, engines } = useApp();
+  const { project, confirmSpend, toast, engines, priceLines, addLedger } = useApp();
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [editText, setEditText] = useState(false);
@@ -317,11 +328,13 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
 
   const addSound = async () => {
     if (!project || !snd.prompt.trim()) return;
-    const ok = await confirmSpend({ title: "Make a sound clip?", lines: [`"${snd.prompt.trim()}", about ${snd.seconds} seconds`, "Uses ElevenLabs sound-effect credits"], skipKey: "sound" });
+    const price = priceLines([{ kind: "sound", count: 1 }]);
+    const ok = await confirmSpend({ title: "Make a sound clip?", lines: [`"${snd.prompt.trim()}", about ${snd.seconds} seconds`, "Uses ElevenLabs sound-effect credits", ...price.lines], warn: price.warn, skipKey: "sound" });
     if (!ok) return;
     setBusy(true);
     try {
       const t = await makeSound(project.id, snd.prompt.trim(), snd.seconds, qualityFormat(engines.quality));
+      addLedger({ kind: "sound", engine: "ElevenLabs sound effects", chars: snd.prompt.trim().length, items: [{ kind: "sound", count: 1 }], note: snd.prompt.trim().slice(0, 60) });
       patch((l) => ({ ...l, events: [...l.events, { id: "e-" + uid(), prompt: snd.prompt.trim(), placement: snd.placement, seconds: snd.seconds, take: t }] }));
       setSnd({ ...snd, prompt: "" });
     } catch (e) {
@@ -407,7 +420,8 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
         Sent as: <b>{sent}</b>
       </p>
       {line.takes.map((t, i) => (
-        <div key={t.id} className={t.id === chosen?.id ? "take chosen" : "take"}>
+        <div key={t.id} className="stack" style={{ gap: 4 }}>
+        <div className={t.id === chosen?.id ? "take chosen" : "take"}>
           <PlayButton label={`Take ${i + 1}`} get={() => takeUrl(project!.id, t.id)} />
           <span className="muted small num">{t.seconds.toFixed(1)}s</span>
           <span className="badge">{modelLabel(t.model)}</span>
@@ -415,6 +429,11 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
           <label className="row small">
             <input type="radio" name={`use-${line.id}`} checked={t.id === chosen?.id} onChange={() => patch((l) => ({ ...l, chosen: t.id }))} /> Use this one
           </label>
+        </div>
+        <details className="small muted" style={{ paddingLeft: 12 }}>
+          <summary>Where this take came from</summary>
+          <TakeFacts t={t} />
+        </details>
         </div>
       ))}
       {line.events.map((e) => (
@@ -457,6 +476,28 @@ function LineCard({ line, index, character, voice, model, dict, patch, make }: {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+
+function TakeFacts({ t }: { t: Take }) {
+  const p = t.provenance;
+  return (
+    <div className="stack" style={{ gap: 2, marginTop: 4 }}>
+      <span>
+        Made {t.at.slice(0, 19).replace("T", " ")} with {p ? ENGINES[p.engine].label : "an engine"} ({modelLabel(t.model)}) using the voice {p?.voiceName ?? t.voiceId}.
+      </span>
+      {p?.quality && <span>Audio quality asked for: {p.quality}.</span>}
+      <span>
+        Sent: <code>{t.sent}</code>
+      </span>
+      {p && (
+        <span>
+          {p.chars} characters, speed {p.speed.toFixed(2)}×, {p.pronunciations} pronunciation rule{p.pronunciations === 1 ? "" : "s"}. Fingerprint <code>{shortHash(p.sha256)}</code> (Greenroom {p.appVersion}).
+        </span>
+      )}
+      {!p && <span>This take was made before Greenroom recorded where takes come from.</span>}
     </div>
   );
 }

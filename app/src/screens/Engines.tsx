@@ -3,6 +3,8 @@ import { api, type PiperStatus } from "../api";
 import { useApp } from "../ctx";
 import { ENGINES, QUALITIES, type ElevenModel, type Quality } from "../engines";
 import { Note, useBusy } from "../ui";
+import { BASIS_LABEL } from "../trust";
+import type { ConsentBasis } from "../types";
 
 export default function Engines() {
   const { keys, engines, saveEngines, go } = useApp();
@@ -74,13 +76,17 @@ function Simple({ title, ready, blurb, extra }: { title: string; ready: boolean;
 function VkClone() {
   const { library, saveLibrary, toast } = useApp();
   const [name, setName] = useState("");
+  const [who, setWho] = useState("");
+  const [basis, setBasis] = useState<ConsentBasis | "">("");
   const register = () => {
     const n = name.trim();
-    if (!n) return;
+    if (!n || !who.trim() || !basis) return;
     if (library.some((v) => v.id === n && v.provider === "voicekiller")) return toast(`${n} is already in your library.`);
-    saveLibrary((l) => [...l, { id: n, name: n, provider: "voicekiller", vkClone: true, source: "cloned", language: "", accent: "", gender: "", notes: "Cloned on voicekiller.com", createdAt: new Date().toISOString() }]);
+    saveLibrary((l) => [...l, { id: n, name: n, provider: "voicekiller", vkClone: true, source: "cloned", language: "", accent: "", gender: "", notes: "Cloned on voicekiller.com", createdAt: new Date().toISOString(), consent: { speaker: who.trim(), basis, reference: "", date: new Date().toISOString().slice(0, 10) } }]);
     toast(`${n} registered.`);
     setName("");
+    setWho("");
+    setBasis("");
   };
   return (
     <div className="stack">
@@ -88,9 +94,20 @@ function VkClone() {
       <p className="muted small">Clones cannot be created through their API, so register one here by the exact name you gave it on their website.</p>
       <div className="row">
         <input type="text" aria-label="Clone name on VoiceKiller" placeholder="Exact name of the clone" value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1 }} />
-        <button disabled={!name.trim()} onClick={register}>
+        <button disabled={!name.trim() || !who.trim() || !basis} onClick={register}>
           Register clone
         </button>
+      </div>
+      <div className="row wrap">
+        <input type="text" aria-label="Whose voice is the clone" placeholder="Whose voice it is" value={who} onChange={(e) => setWho(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
+        <select aria-label="Basis for using the clone" value={basis} onChange={(e) => setBasis(e.target.value as ConsentBasis)}>
+          <option value="">Basis for using it…</option>
+          {(["self", "permission", "licence", "other"] as ConsentBasis[]).map((b) => (
+            <option key={b} value={b}>
+              {BASIS_LABEL[b]}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   );

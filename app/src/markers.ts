@@ -4,7 +4,9 @@
 
 import { stemSets, type Plan } from "./audio";
 import { chosenTake } from "./direct";
-import type { Project } from "./types";
+import { ENGINES } from "./engines";
+import { rightsFor } from "./trust";
+import type { Project, VoiceEntry } from "./types";
 
 export interface Marker {
   sec: number;
@@ -46,15 +48,19 @@ const csvCell = (v: string | number): string => {
 };
 
 /** A cue sheet of every spoken line, with what produced it. A BOM makes Excel read non-English names correctly. */
-export function cueSheetCsv(project: Project, plan: Plan, fps: number): string {
-  const head = ["Line", "Scene", "Character", "Start (TC)", "End (TC)", "Start (s)", "End (s)", "Duration (s)", "Text", "Direction", "Level (dB)", "Voice id", "Model", "Take id", "Sent to the voice"];
+export function cueSheetCsv(project: Project, plan: Plan, fps: number, library: VoiceEntry[] = []): string {
+  const head = ["Line", "Scene", "Character", "Start (TC)", "End (TC)", "Start (s)", "End (s)", "Duration (s)", "Text", "Direction", "Level (dB)", "Voice id", "Model", "Take id", "Sent to the voice", "Engine", "Audio quality", "SHA-256", "Voice rights"];
+  const rights = (characterId: string): string => {
+    const v = library.find((x) => x.id === project.characters.find((c) => c.id === characterId)?.voiceId);
+    return v ? rightsFor(v, []).level : "";
+  };
   const rows = plan.spans.map((s) => {
     const line = project.lines.find((l) => l.id === s.lineId)!;
     const take = chosenTake(line);
     const who = project.characters.find((c) => c.id === line.characterId)?.name ?? "";
     const d = line.direction;
     const direction = [d.emotion, ...d.sounds, d.note].filter(Boolean).join("; ");
-    return [project.lines.indexOf(line) + 1, project.scenes[line.scene] ?? "", who, timecode(s.start, fps), timecode(s.end, fps), s.start.toFixed(3), s.end.toFixed(3), (s.end - s.start).toFixed(3), line.text, direction, (d.gain ?? 0).toFixed(1), take?.voiceId ?? "", take?.model ?? "", take?.id ?? "", take?.sent ?? ""].map(csvCell).join(",");
+    return [project.lines.indexOf(line) + 1, project.scenes[line.scene] ?? "", who, timecode(s.start, fps), timecode(s.end, fps), s.start.toFixed(3), s.end.toFixed(3), (s.end - s.start).toFixed(3), line.text, direction, (d.gain ?? 0).toFixed(1), take?.voiceId ?? "", take?.model ?? "", take?.id ?? "", take?.sent ?? "", take?.provenance ? ENGINES[take.provenance.engine].label : "", take?.provenance?.quality ?? "", take?.provenance?.sha256 ?? "", rights(line.characterId)].map(csvCell).join(",");
   });
   return "﻿" + [head.map(csvCell).join(","), ...rows].join("\r\n") + "\r\n";
 }

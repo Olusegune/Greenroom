@@ -7,7 +7,8 @@ import { Flag } from "../flags";
 import { Plus, Trash } from "../icons";
 import { ACCENTS, languageName, TILES, type Tile } from "../languages";
 import { fromBase64 } from "../audio";
-import type { VoiceEntry } from "../types";
+import type { Consent, ConsentBasis, LicenceUse, VoiceEntry } from "../types";
+import { BASIS_LABEL, LICENCE_LABEL, rightsFor } from "../trust";
 import { Empty, Note, PlayButton, Tabs, useBusy } from "../ui";
 import { useSample, voiceLine } from "../useSample";
 
@@ -133,6 +134,7 @@ function Mine({ goFind }: { goFind: () => void }) {
                   ))}
                 </div>
               )}
+              <RightsEditor v={v} onChange={(p) => patch(v.id, v.provider, p)} />
               {project && speakers.length > 0 ? (
                 <select aria-label={`Use ${v.name} for a character`} value="" onChange={(e) => e.target.value && useFor(v, e.target.value)}>
                   <option value="">Use this voice for…</option>
@@ -397,7 +399,7 @@ const EXAMPLES = [
 ];
 
 function Design() {
-  const { confirmSpend, toast, keys } = useApp();
+  const { confirmSpend, toast, keys, priceLines, addLedger } = useApp();
   const add = useAdd();
   const { busy, run } = useBusy();
   const [desc, setDesc] = useState("");
@@ -406,11 +408,13 @@ function Design() {
   const ok = desc.trim().length >= 20;
 
   const make = async () => {
-    const go = await confirmSpend({ title: "Design a voice?", lines: ["Makes up to 3 preview voices from your description", "Uses ElevenLabs credits for each preview. Saving a voice to your account needs a plan that allows it."] });
+    const price = priceLines([{ kind: "design", count: 3 }]);
+    const go = await confirmSpend({ title: "Design a voice?", lines: ["Makes up to 3 preview voices from your description", "Uses ElevenLabs credits for each preview. Saving a voice to your account needs a plan that allows it.", ...price.lines], warn: price.warn });
     if (!go) return;
     await run(async () => {
       try {
         const out = await api.voiceDesign(desc, sample.trim() || undefined);
+        addLedger({ kind: "design", engine: "ElevenLabs voice design", chars: desc.length, items: [{ kind: "design", count: out.length }] });
         setPreviews(out.map((p, i) => ({ p, url: URL.createObjectURL(new Blob([fromBase64(p.audioB64) as BlobPart], { type: "audio/mpeg" })), name: `Designed voice ${i + 1}` })));
       } catch (e) {
         toast((e as Error).message, true);
@@ -421,7 +425,7 @@ function Design() {
     const it = previews[i]!;
     try {
       const id = await api.voiceDesignSave(it.p.generatedVoiceId, it.name, desc);
-      add({ id, name: it.name, provider: "elevenlabs", source: "designed", language: "", accent: "", gender: "", notes: desc.slice(0, 160) });
+      add({ id, name: it.name, provider: "elevenlabs", source: "designed", language: "", accent: "", gender: "", notes: desc.slice(0, 160), consent: { speaker: "No real person: designed from a description", basis: "designed", reference: desc.slice(0, 120), date: new Date().toISOString().slice(0, 10) } });
     } catch (e) {
       toast((e as Error).message, true);
     }
@@ -474,7 +478,10 @@ function Clone() {
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [perm, setPerm] = useState(false);
-  const ready = name.trim() && file && perm && keys.elevenlabs;
+  const [who, setWho] = useState("");
+  const [basis, setBasis] = useState<ConsentBasis | "">("");
+  const [ref, setRef] = useState("");
+  const ready = name.trim() && file && perm && who.trim() && basis && keys.elevenlabs;
 
   const go = () =>
     run(async () => {
@@ -484,10 +491,13 @@ function Clone() {
         let s = "";
         for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
         const id = await api.voiceClone(name.trim(), file.name, file.type || "audio/mpeg", btoa(s), perm);
-        add({ id, name: name.trim(), provider: "elevenlabs", source: "cloned", language: "", accent: "", gender: "", notes: "Cloned in Greenroom" });
+        add({ id, name: name.trim(), provider: "elevenlabs", source: "cloned", language: "", accent: "", gender: "", notes: "Cloned in Greenroom", consent: { speaker: who.trim(), basis: basis as ConsentBasis, reference: ref.trim(), date: new Date().toISOString().slice(0, 10) } });
         setName("");
         setFile(null);
         setPerm(false);
+        setWho("");
+        setBasis("");
+        setRef("");
       } catch (e) {
         toast((e as Error).message, true);
       }
@@ -505,6 +515,31 @@ function Clone() {
           Recording (WAV, MP3, M4A, up to 30 MB)
           <input type="file" accept="audio/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
         </label>
+        <div className="card stack" style={{ background: "var(--surface-1)" }}>
+          <h3>Consent record</h3>
+          <p className="muted small">Kept with the voice and written into your production report. Studios and platforms ask for this.</p>
+          <div className="row wrap">
+            <label className="field" style={{ flex: 1, minWidth: 180 }}>
+              Whose voice is it?
+              <input type="text" value={who} onChange={(e) => setWho(e.target.value)} placeholder="Full name of the speaker" />
+            </label>
+            <label className="field" style={{ flex: 1, minWidth: 220 }}>
+              On what basis?
+              <select value={basis} onChange={(e) => setBasis(e.target.value as ConsentBasis)}>
+                <option value="">Choose…</option>
+                {(["self", "permission", "licence", "other"] as ConsentBasis[]).map((b) => (
+                  <option key={b} value={b}>
+                    {BASIS_LABEL[b]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label className="field">
+            Reference (optional): a contract, release or email
+            <input type="text" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Voice release signed 12 Oct 2026" />
+          </label>
+        </div>
         <label className="row">
           <input type="checkbox" checked={perm} onChange={(e) => setPerm(e.target.checked)} />
           <span>I have permission from the person whose voice this is to clone it.</span>
@@ -517,5 +552,70 @@ function Clone() {
         </div>
       </div>
     </>
+  );
+}
+
+
+/** Who agreed to a voice and what the licence allows. A record and a reminder: it never blocks anything. */
+function RightsEditor({ v, onChange }: { v: VoiceEntry; onChange: (p: Partial<VoiceEntry>) => void }) {
+  const r = rightsFor(v, []);
+  const today = new Date().toISOString().slice(0, 10);
+  const c: Consent = v.consent ?? { speaker: "", basis: "other", reference: "", date: today };
+  const setConsent = (p: Partial<Consent>) => {
+    const next = { ...c, ...p, date: v.consent?.date ?? today };
+    onChange({ consent: next.speaker.trim() || next.reference.trim() ? next : undefined });
+  };
+  return (
+    <details className="small">
+      <summary>
+        Rights and consent{" "}
+        <span className={r.level === "clear" ? "badge ok" : r.level === "missing" ? "badge warn" : "badge"}>
+          {r.level === "clear" ? "clear" : r.level === "missing" ? "consent needed" : "to review"}
+        </span>
+      </summary>
+      <div className="stack" style={{ marginTop: 8 }}>
+        {r.issues.map((i) => (
+          <p key={i} className="muted small">
+            {i}
+          </p>
+        ))}
+        <div className="row wrap">
+          <label className="field" style={{ flex: 1, minWidth: 140 }}>
+            Commercial use
+            <select value={v.licence ?? "unknown"} onChange={(e) => onChange({ licence: e.target.value as LicenceUse, licenceChecked: today })}>
+              {(Object.keys(LICENCE_LABEL) as LicenceUse[]).map((k) => (
+                <option key={k} value={k}>
+                  {LICENCE_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field" style={{ flex: 2, minWidth: 160 }}>
+            Licence note
+            <input type="text" value={v.licenceNote ?? ""} placeholder="Where you checked, and when" onChange={(e) => onChange({ licenceNote: e.target.value })} />
+          </label>
+        </div>
+        <div className="row wrap">
+          <label className="field" style={{ flex: 1, minWidth: 140 }}>
+            Speaker
+            <input type="text" value={c.speaker} onChange={(e) => setConsent({ speaker: e.target.value })} placeholder="Whose voice it is" />
+          </label>
+          <label className="field" style={{ flex: 1, minWidth: 160 }}>
+            Basis
+            <select value={c.basis} onChange={(e) => setConsent({ basis: e.target.value as ConsentBasis })}>
+              {(Object.keys(BASIS_LABEL) as ConsentBasis[]).map((k) => (
+                <option key={k} value={k}>
+                  {BASIS_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <label className="field">
+          Reference
+          <input type="text" value={c.reference} onChange={(e) => setConsent({ reference: e.target.value })} placeholder="Contract, release or email" />
+        </label>
+      </div>
+    </details>
   );
 }

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Provider, useApp, type Tab } from "./ctx";
-import { Cast as CastIcon, Export as ExportIcon, Gear, Home as HomeIcon, Layers, Mark, Render, Script, Speaker, Voices as VoicesIcon } from "./icons";
+import { Cast as CastIcon, Export as ExportIcon, Gear, Home as HomeIcon, Layers, Shield, Mark, Render, Script, Speaker, Voices as VoicesIcon } from "./icons";
 import Cast from "./screens/Cast";
 import Engines from "./screens/Engines";
 import Export from "./screens/Export";
 import Home from "./screens/Home";
+import Studio from "./screens/Studio";
 import Lab from "./screens/Lab";
 import Perform from "./screens/Perform";
 import Settings from "./screens/Settings";
@@ -40,7 +41,7 @@ function Shell() {
     </button>
   );
   const takes = project ? project.lines.filter((l) => l.takes.length > 0).length : 0;
-  const screens: Record<Tab, React.ReactNode> = { home: <Home />, write: <Write />, cast: <Cast />, perform: <Perform />, export: <Export />, voices: <Voices />, engines: <Engines />, lab: <Lab />, settings: <Settings /> };
+  const screens: Record<Tab, React.ReactNode> = { home: <Home />, write: <Write />, cast: <Cast />, perform: <Perform />, export: <Export />, studio: <Studio />, voices: <Voices />, engines: <Engines />, lab: <Lab />, settings: <Settings /> };
 
   return (
     <div className="shell">
@@ -57,6 +58,7 @@ function Shell() {
             <Item id="cast" label="Cast" icon={<CastIcon size={18} />} />
             <Item id="perform" label="Perform" icon={<Render size={18} />} count={project.lines.length ? `${takes}/${project.lines.length}` : undefined} />
             <Item id="export" label="Export" icon={<ExportIcon size={18} />} />
+            <Item id="studio" label="Studio" icon={<Shield size={18} />} />
           </>
         )}
         <h3>Library</h3>

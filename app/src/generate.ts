@@ -3,8 +3,11 @@
 import { api, type Provider } from "./api";
 import { applyPronunciations, composeText, stripTags, vkInstructions } from "./direct";
 import { ENGINES, providerFor, type ElevenModel } from "./engines";
+import { fromBase64 } from "./audio";
 import { remember } from "./media";
 import { uid } from "./script";
+import { sha256Hex } from "./trust";
+import { APP_VERSION } from "./version";
 import type { Line, Pronunciation, Take, VoiceEntry } from "./types";
 
 export type Model = ElevenModel;
@@ -25,7 +28,30 @@ export async function makeTake(projectId: string, line: Line, voice: VoiceEntry,
   const ext = out.mime === "audio/wav" ? "wav" : "mp3";
   await api.takeWrite(projectId, id, ext, out.audioB64);
   const seconds = await remember(id, out);
-  return { id, at: new Date().toISOString(), model: p.model, ext, voiceId: voice.id, sent: p.instructions ? `${p.text}  (instructions: ${p.instructions})` : p.text, seconds };
+  const sha256 = await sha256Hex(fromBase64(out.audioB64));
+  return {
+    id,
+    at: new Date().toISOString(),
+    model: p.model,
+    ext,
+    voiceId: voice.id,
+    sent: p.instructions ? `${p.text}  (instructions: ${p.instructions})` : p.text,
+    seconds,
+    provenance: {
+      engine: voice.provider,
+      voiceName: voice.name,
+      quality: voice.provider === "elevenlabs" ? quality : undefined,
+      speed: line.direction.speed,
+      instructions: p.instructions,
+      chars: p.text.length,
+      sha256,
+      appVersion: APP_VERSION,
+      emotion: line.direction.emotion,
+      sounds: line.direction.sounds,
+      note: line.direction.note ?? "",
+      pronunciations: dict.length,
+    },
+  };
 }
 
 /** A sound clip (laugh, sneeze, door) made by the sound-effects model, kept like any other take. */
@@ -35,7 +61,8 @@ export async function makeSound(projectId: string, prompt: string, seconds: numb
   const ext = out.mime === "audio/wav" ? "wav" : "mp3";
   await api.takeWrite(projectId, id, ext, out.audioB64);
   const real = await remember(id, out);
-  return { id, ext, seconds: real } as const;
+  const sha256 = await sha256Hex(fromBase64(out.audioB64));
+  return { id, ext, seconds: real, sha256, prompt } as const;
 }
 
 export function modelLabel(m: Take["model"]): string {
