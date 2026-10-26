@@ -6,6 +6,7 @@ Status: proposed, awaiting owner approval. No app code is written until approved
 A Windows desktop app where you paste a scene, give each character a voice, direct each line with emotion and sound chips (laugh, sigh, cry, gasp, cough, sneeze, whisper, out of breath), and export a lifelike audio scene. One screen, no gated steps.
 
 ## Principles
+0. Everything is done in the app window. The owner never needs a terminal: keys are pasted into Settings, tests and exports are buttons, releases are an installer.
 1. One path, nothing blocks you. Warnings, not walls.
 2. Cloud-first for v1. Local models come after the listening spike.
 3. Provider-independent: every model sits behind one adapter interface. No unverified model IDs are hardcoded.
@@ -32,7 +33,7 @@ Tauri 2, React, TypeScript, Rust services, FFmpeg for mixing and export. Local p
 ## Slices (each demoable; stop for sign-off between slices)
 | # | Slice | Done when |
 |---|---|---|
-| 0 | Listening spike: one test scene, 2-3 providers, 8 sound events, no UI | Owner hears results; provider choice recorded with evidence |
+| 0 | Listening Lab inside the Windows app: a Settings box to paste keys (stored in Windows Credential Manager), a Run test button showing the cost first, then clips side by side with play buttons and a 1-5 rating | Owner hears results in the app; provider choice recorded with evidence. This screen stays as a Settings/Lab page |
 | 1 | App shell, Write and Cast, key storage | Pasted scene shows characters with previewable voices |
 | 2 | Perform: line cards, chips, takes | One line can be directed and audibly changes |
 | 3 | Play scene and Export | A finished scene exports as WAV/MP3 plus per-line files |
