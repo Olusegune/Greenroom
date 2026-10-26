@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Greenroom",
+  "version": "0.0.1",
+  "identifier": "app.greenroom.desktop",
+  "build": { "beforeDevCommand": "npm run dev", "devUrl": "http://localhost:1431", "beforeBuildCommand": "npm run build", "frontendDist": "../dist" },
+  "app": {
+    "windows": [ { "label": "main", "title": "Greenroom", "width": 1180, "height": 800, "minWidth": 900, "minHeight": 640, "backgroundColor": "#0C100E", "theme": "Dark", "center": true } ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self' 'unsafe-inline'",
+        "img-src": "'self' data:",
+        "media-src": "'self' blob: data:",
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "form-action": "'none'",
+        "frame-ancestors": "'none'"
+      }
+    }
+  },
+  "bundle": { "active": true, "targets": ["nsis"], "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"], "windows": { "nsis": { "installMode": "currentUser", "displayLanguageSelector": false } } }
+}
