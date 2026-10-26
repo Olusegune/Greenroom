@@ -24,6 +24,6 @@ Measured in the app's own mixer with a constant tone: -12.000 dB under dialogue 
 Music is its own stem ("Music"), is included in the mix, is listed in the OTIO timeline with its trim and the licence note, and its original is copied into a Music folder.
 
 ## Limits
-- No undo yet. Moving a line can be corrected by dragging it back or choosing Follow previous.
+- Undo covers what this screen changes: line starts, fades and levels, music and the ducking settings. Use the Undo and Redo buttons or Ctrl+Z and Ctrl+Shift+Z. A quick run of the same kind of change (a slider, typing a number, arrow-key nudges) is one step, and up to 100 steps are kept while the app is open. Undo never touches takes, text, voices or the Picture screen's cue edits.
 - Scene-by-scene exports use the lines only, without cues or music.
 - Not yet checked in Resolve, Premiere or Pro Tools, and not yet judged by ear.

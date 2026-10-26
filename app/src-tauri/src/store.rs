@@ -161,6 +161,17 @@ pub fn library_load(root: &Path) -> String {
     fs::read_to_string(root.join("voices.json")).unwrap_or_else(|_| "[]".into())
 }
 
+pub fn casts_load(root: &Path) -> String {
+    fs::read_to_string(root.join("casts.json")).unwrap_or_else(|_| "[]".into())
+}
+
+pub fn casts_save(root: &Path, json: &str) -> Result<(), String> {
+    if json.len() > 2 << 20 || !serde_json::from_str::<Value>(json).map(|v| v.is_array()).unwrap_or(false) {
+        return Err("The saved casts were not valid.".into());
+    }
+    atomic_write(&root.join("casts.json"), json.as_bytes())
+}
+
 pub fn library_save(root: &Path, json: &str) -> Result<(), String> {
     if json.len() > 2 << 20 || !serde_json::from_str::<Value>(json).map(|v| v.is_array()).unwrap_or(false) {
         return Err("The voice library data was not valid.".into());
@@ -176,6 +187,18 @@ mod tests {
         let p = std::env::temp_dir().join(format!("greenroom-test-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&p);
         p
+    }
+
+    #[test]
+    fn saved_casts_round_trip_and_refuse_non_lists() {
+        let r = std::env::temp_dir().join(format!("greenroom-casts-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&r);
+        assert_eq!(casts_load(&r), "[]");
+        casts_save(&r, r#"[{"id":"c1"}]"#).unwrap();
+        assert_eq!(casts_load(&r), r#"[{"id":"c1"}]"#);
+        assert!(casts_save(&r, "{}").is_err());
+        assert!(casts_save(&r, "nope").is_err());
+        let _ = fs::remove_dir_all(&r);
     }
 
     #[test]

@@ -2,6 +2,7 @@
 // It makes short tones instead of calling any provider, so every screen can be viewed and tested for free.
 
 import { encodeWav, toBase64 } from "./audio";
+import type { SavedCast } from "./cast";
 import type { Project, VoiceEntry, VoiceInfo } from "./types";
 import type { Api, ClipReq, KeyName, PiperVoice, VideoInfo } from "./api";
 import type { EnginesCfg } from "./engines";
@@ -11,6 +12,7 @@ const keys = { elevenlabs: true, kie: true, voicekiller: true } as Record<string
 const projects = new Map<string, Project>();
 const takes = new Map<string, { audioB64: string; mime: string }>();
 let library: VoiceEntry[] = [];
+let casts: SavedCast[] = [];
 let engines: Partial<EnginesCfg> = {};
 let piperInstalled = false;
 let ffmpegInstalled = false;
@@ -82,6 +84,8 @@ export const mock: Api = {
   exportWrite: async (_p, folder, filename) => `C:\\Users\\you\\Documents\\Greenroom\\projects\\demo\\exports\\${folder ? folder + "\\" : ""}${filename}`,
   libraryLoad: async () => structuredClone(library),
   librarySave: async (v) => void (library = structuredClone(v)),
+  castsLoad: async () => structuredClone(casts),
+  castsSave: async (c: SavedCast[]) => void (casts = structuredClone(c)),
   enginesLoad: async () => structuredClone(engines),
   enginesSave: async (c) => void (engines = structuredClone(c)),
   piperStatus: async () => ({ installed: piperInstalled, voices: [...piperVoices] }),

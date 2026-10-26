@@ -328,6 +328,16 @@ async fn video_mux(app: tauri::AppHandle, project: String, video: String, mix: S
 }
 
 #[tauri::command]
+fn casts_load(app: tauri::AppHandle) -> Result<String, String> {
+    Ok(store::casts_load(&root(&app)?))
+}
+
+#[tauri::command]
+fn casts_save(app: tauri::AppHandle, json: String) -> Result<(), String> {
+    store::casts_save(&root(&app)?, &json)
+}
+
+#[tauri::command]
 fn library_load(app: tauri::AppHandle) -> Result<String, String> {
     Ok(store::library_load(&root(&app)?))
 }
@@ -452,7 +462,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             key_status, set_key, clear_key, run_clip, voices_mine, voices_voicekiller, voices_shared, voice_add_shared, voice_design, voice_design_save, voice_clone,
-            voice_delete, preview_fetch, project_list, project_load, project_save, take_write, take_read, export_write, library_load, library_save,
+            voice_delete, preview_fetch, project_list, project_load, project_save, take_write, take_read, export_write, library_load, library_save, casts_load, casts_save,
             save_report, audio_import, ffmpeg_status, ffmpeg_install, video_mux, video_probe, video_allow, director_complete, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
         ])
         .run(tauri::generate_context!())

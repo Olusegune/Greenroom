@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
+import { historyFor, restore, snapshot } from "../arrangement";
 import { planTimeline, type Placed } from "../audio";
 import { useApp } from "../ctx";
 import { Play, Plus, Stop, Trash } from "../icons";
@@ -146,8 +147,24 @@ export default function Timeline() {
   };
 
   // ---- editing --------------------------------------------------------------------------------------------------
+  const hist = project ? historyFor(project.id) : null;
+  /** Every change on this screen goes through here so it can be undone. Quick runs with the same key become one step. */
+  const change = (key: string, fn: (p: NonNullable<typeof project>) => NonNullable<typeof project>) => {
+    if (project && hist) hist.record(snapshot(project), key, Date.now());
+    edit(fn);
+  };
+  const undo = () => {
+    if (!project || !hist) return;
+    const prev = hist.undo(snapshot(project));
+    if (prev) edit((p) => restore(p, prev));
+  };
+  const redo = () => {
+    if (!project || !hist) return;
+    const next = hist.redo(snapshot(project));
+    if (next) edit((p) => restore(p, next));
+  };
   const setCue = (id: string, sec: number | undefined) =>
-    edit((p) => ({
+    change(`cue:${id}`, (p) => ({
       ...p,
       lines: p.lines.map((l) => {
         if (l.id !== id) return l;
@@ -159,9 +176,9 @@ export default function Timeline() {
         return { ...l, cue: Math.max(0, sec) };
       }),
     }));
-  const patchLine = (id: string, fn: (l: Line) => Line) => edit((p) => ({ ...p, lines: p.lines.map((l) => (l.id === id ? fn(l) : l)) }));
-  const patchMusic = (id: string, patch: Partial<MusicClip>) => edit((p) => ({ ...p, music: (p.music ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
-  const setMix = (patch: Partial<MixCfg>) => edit((p) => ({ ...p, mix: { ...(p.mix ?? {}), ...patch } }));
+  const patchLine = (id: string, fn: (l: Line) => Line) => change(`line:${id}`, (p) => ({ ...p, lines: p.lines.map((l) => (l.id === id ? fn(l) : l)) }));
+  const patchMusic = (id: string, patch: Partial<MusicClip>) => change(`music:${id}`, (p) => ({ ...p, music: (p.music ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m)) }));
+  const setMix = (patch: Partial<MixCfg>) => change("mix", (p) => ({ ...p, mix: { ...(p.mix ?? {}), ...patch } }));
 
   const snapped = (sec: number, self: Clip, shift: boolean) => {
     if (!snap || shift || !plan) return sec;
@@ -214,7 +231,7 @@ export default function Timeline() {
         const imp = await api.audioImport(project.id, path);
         const seconds = await remember(imp.id, await api.takeRead(project.id, imp.id));
         const clip: MusicClip = { id: "mu-" + uid(), name: imp.name.replace(/\.[^.]+$/, ""), take: { id: imp.id, ext: imp.ext, seconds, sha256: imp.sha256, bytes: imp.bytes }, start: Math.max(0, t), gainDb: -10, fadeIn: 0.5, fadeOut: 2, trimIn: 0, length: seconds, duck: true, source: "" };
-        edit((p) => ({ ...p, music: [...(p.music ?? []), clip] }));
+        change("", (p) => ({ ...p, music: [...(p.music ?? []), clip] }));
         setSel({ kind: "music", id: clip.id });
         toast("Music added. Note where it came from and its licence in the panel below: it goes in the production report.");
       } catch (e) {
@@ -223,7 +240,7 @@ export default function Timeline() {
     });
 
   const removeMusic = (id: string) => {
-    edit((p) => ({ ...p, music: (p.music ?? []).filter((m) => m.id !== id) }));
+    change("", (p) => ({ ...p, music: (p.music ?? []).filter((m) => m.id !== id) }));
     setSel(null);
   };
 
@@ -267,7 +284,15 @@ export default function Timeline() {
   const width = LABEL + total * px + 60;
 
   return (
-    <section>
+    <section
+      onKeyDown={(e) => {
+        const t = e.target as HTMLElement;
+        if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || !(e.ctrlKey || e.metaKey)) return;
+        const k = e.key.toLowerCase();
+        if (k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+        else if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); redo(); }
+      }}
+    >
       <div>
         <h1>Timeline</h1>
         <p className="lede">Arrange the performance: drag a line to move it, let dialogue overlap, and add music that dips under the voices. Lines that cross each other from the same character crossfade by themselves.</p>
@@ -280,6 +305,12 @@ export default function Timeline() {
           </button>
           <code className="pic-tc" title="Playhead">{clock(t)}</code>
           <span className="spacer" />
+          <button className="sm" onClick={undo} disabled={!hist?.canUndo()} title="Undo (Ctrl+Z)">
+            Undo
+          </button>
+          <button className="sm" onClick={redo} disabled={!hist?.canRedo()} title="Redo (Ctrl+Shift+Z)">
+            Redo
+          </button>
           <label className="row small muted">
             <input type="checkbox" checked={snap} onChange={(e) => setSnap(e.target.checked)} /> Snap to edges{pic ? " and frames" : ""}
           </label>

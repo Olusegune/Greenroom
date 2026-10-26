@@ -1,5 +1,6 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import type { SavedCast } from "./cast";
 import type { Project, VoiceEntry, VoiceInfo } from "./types";
 import { mock } from "./mock";
 import type { EnginesCfg } from "./engines";
@@ -114,6 +115,8 @@ const real = {
   takeRead: (project: string, take: string) => call<Audio>("take_read", { project, take }),
   exportWrite: (project: string, folder: string, filename: string, audioB64: string) => call<string>("export_write", { project, folder, filename, audioB64 }),
   libraryLoad: async () => JSON.parse(await call<string>("library_load")) as VoiceEntry[],
+  castsLoad: async () => JSON.parse(await call<string>("casts_load")) as SavedCast[],
+  castsSave: (c: SavedCast[]) => call<void>("casts_save", { json: JSON.stringify(c) }),
   librarySave: (v: VoiceEntry[]) => call<void>("library_save", { json: JSON.stringify(v) }),
   saveReport: (text: string) => call<string>("save_report", { text }),
   enginesLoad: async () => JSON.parse(await call<string>("engines_load")) as Partial<EnginesCfg>,

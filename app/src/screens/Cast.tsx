@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../api";
+import { appliedSummary, applyCast, castFrom, type SavedCast } from "../cast";
 import { useApp } from "../ctx";
 import { ENGINES, ENGINE_ORDER, type Engine } from "../engines";
 import { Flag } from "../flags";
 import { ChevronRight } from "../icons";
 import { TILES, tileByName } from "../languages";
+import { uid } from "../script";
 import { Empty, Note, PlayButton } from "../ui";
 import { useSample, voiceLine } from "../useSample";
 
@@ -109,6 +112,7 @@ export default function Cast() {
           );
         })}
       </div>
+      <SavedCasts />
       <Pronunciations />
       <div className="row">
         {missing > 0 ? <span className="muted">{missing} character{missing === 1 ? "" : "s"} still need a voice.</span> : <span className="ok-text">Everyone has a voice.</span>}
@@ -118,6 +122,78 @@ export default function Cast() {
         </button>
       </div>
     </section>
+  );
+}
+
+/** Voices for named characters, kept for reuse in other projects: a series keeps its cast. */
+function SavedCasts() {
+  const { project, edit, library, toast } = useApp();
+  const [casts, setCasts] = useState<SavedCast[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [name, setName] = useState("");
+  const [sure, setSure] = useState<string | null>(null);
+  useEffect(() => void api.castsLoad().then((c) => (setCasts(c), setLoaded(true))).catch(() => setLoaded(true)), []);
+  if (!project) return null;
+
+  const persist = (next: SavedCast[]) => {
+    setCasts(next);
+    api.castsSave(next).catch((e: Error) => toast(e.message, true));
+  };
+  const current = castFrom(project, library, name || project.name, "x", "");
+  const save = () => {
+    const c = castFrom(project, library, name || project.name, "cast-" + uid(), new Date().toISOString());
+    if (c.members.length === 0) return toast("Give at least one character a voice first.", true);
+    // The same name replaces the earlier cast, so a series can keep one up to date.
+    const old = casts.find((x) => x.name.toLowerCase() === c.name.toLowerCase());
+    persist([{ ...c, id: old?.id ?? c.id }, ...casts.filter((x) => x !== old)]);
+    setName("");
+    toast(old ? `Updated the cast "${c.name}".` : `Saved the cast "${c.name}".`);
+  };
+  const use = (c: SavedCast) => {
+    const r = applyCast(project, c, library);
+    if (r.applied.length) edit((p) => ({ ...p, characters: r.characters }));
+    toast(appliedSummary(r), r.applied.length === 0);
+  };
+
+  return (
+    <div className="card stack">
+      <h2>Saved casts</h2>
+      <p className="muted small">Keep who speaks with which voice, then use it in another project: characters are matched by name. Nothing is generated, so using a cast costs nothing.</p>
+      <div className="row wrap">
+        <input type="text" aria-label="Name for this cast" placeholder={project.name} value={name} onChange={(e) => setName(e.target.value)} style={{ flex: 1, minWidth: 200 }} />
+        <button onClick={save} disabled={current.members.length === 0}>
+          Save this cast
+        </button>
+      </div>
+      {current.members.length === 0 && <p className="muted small">Choose a voice for at least one character above, then you can save the cast.</p>}
+      {loaded && casts.length === 0 && <p className="muted small">No saved casts yet.</p>}
+      {casts.map((c) => {
+        const preview = applyCast(project, c, library);
+        return (
+          <div key={c.id} className="row between wrap" style={{ borderTop: "1px solid var(--line)", paddingTop: 8 }}>
+            <div>
+              <strong>{c.name}</strong>
+              <div className="muted small">{c.members.map((m) => `${m.name}: ${m.voiceName}`).join(" · ")}</div>
+              <div className="muted small">{preview.applied.length > 0 ? `Fits ${preview.applied.join(", ")} here.` : "No character here has these names."}</div>
+            </div>
+            <div className="row">
+              <button className="sm primary" onClick={() => use(c)} disabled={preview.applied.length === 0}>
+                Use in this project
+              </button>
+              {sure === c.id ? (
+                <button className="sm danger" onClick={() => (persist(casts.filter((x) => x.id !== c.id)), setSure(null))}>
+                  Really delete
+                </button>
+              ) : (
+                <button className="sm ghost" aria-label={`Delete the cast ${c.name}`} onClick={() => setSure(c.id)}>
+                  Delete
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
