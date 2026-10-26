@@ -1,7 +1,7 @@
 // Slice 0 listening test: the lines, which provider renders each, and the report the owner saves.
 // Nothing here is a claim about quality. Ratings come from listening.
 
-export type Provider = "eleven-tts" | "eleven-sfx" | "kie-tts" | "kie-dialogue" | "kie-sfx";
+export type Provider = "eleven-v4" | "eleven-tts" |"eleven-sfx" | "kie-tts" | "kie-dialogue" | "kie-sfx";
 export type KeyName = "elevenlabs" | "kie";
 
 export interface Clip {
@@ -15,6 +15,7 @@ export interface Clip {
 }
 
 export const PROVIDER_INFO: Record<Provider, { label: string; key: KeyName; note: string }> = {
+  "eleven-v4": { label: "ElevenLabs v4", key: "elevenlabs", note: "Newest model; [tag] support is not confirmed in the docs" },
   "eleven-tts": { label: "ElevenLabs v3", key: "elevenlabs", note: "Direct, supports [tags]" },
   "eleven-sfx": { label: "ElevenLabs sound effects", key: "elevenlabs", note: "Non-speech sounds" },
   "kie-tts": { label: "Kie · ElevenLabs Turbo 2.5", key: "kie", note: "Tags may be read aloud: that is a finding" },
@@ -41,7 +42,10 @@ const SOUNDS: { id: string; title: string; text: string; listenFor: string }[] =
   { id: "run", title: "Running breath", text: "A person breathing hard after running, heavy panting", listenFor: "Steady, believable breathing" },
 ];
 
-const elevenSpeech = SPEECH.map((s): Clip => ({ ...s, id: `eleven-tts:${s.id}`, group: "Speech with feeling", provider: "eleven-tts" }));
+const elevenSpeech = SPEECH.flatMap((s): Clip[] => [
+  { ...s, id: `eleven-v4:${s.id}`, group: "Speech with feeling", provider: "eleven-v4" },
+  { ...s, id: `eleven-tts:${s.id}`, group: "Speech with feeling", provider: "eleven-tts" },
+]);
 const kieSpeech = SPEECH.filter((s) => ["plain", "laugh", "cry", "cough"].includes(s.id)).flatMap((s): Clip[] => [
   { ...s, id: `kie-tts:${s.id}`, group: "Speech with feeling", provider: "kie-tts" },
   { ...s, id: `kie-dialogue:${s.id}`, group: "Speech with feeling", provider: "kie-dialogue" },

@@ -10,7 +10,26 @@ export default function App() {
   const [keys, setKeys] = useState<Keys>({ elevenlabs: false, kie: false });
   const refreshKeys = useCallback(() => void api.keyStatus().then(setKeys).catch(() => undefined), []);
   useEffect(refreshKeys, [refreshKeys]);
+  const [splash, setSplash] = useState<"show" | "fade" | "gone">("show");
+  useEffect(() => {
+    const a = setTimeout(() => setSplash("fade"), 2200);
+    const b = setTimeout(() => setSplash("gone"), 2900);
+    return () => (clearTimeout(a), clearTimeout(b));
+  }, []);
 
+  return (
+    <>
+      {splash !== "gone" && (
+        <div className={splash === "fade" ? "splash out" : "splash"} onClick={() => setSplash("gone")} role="presentation">
+          <img src="/splash.webp" alt="Greenroom. Sound without limits." />
+        </div>
+      )}
+      <Main tab={tab} setTab={setTab} keys={keys} refreshKeys={refreshKeys} />
+    </>
+  );
+}
+
+function Main({ tab, setTab, keys, refreshKeys }: { tab: Tab; setTab: (t: Tab) => void; keys: Keys; refreshKeys: () => void }) {
   return (
     <div className="shell">
       <nav className="rail" aria-label="Main">
@@ -219,7 +238,7 @@ function Lab({ keys, goSettings }: { keys: Keys; goSettings: () => void }) {
         {running ? (
           <button onClick={() => (stop.current = true)}>Stop after this clip</button>
         ) : (
-          <button className="primary" disabled={chosen.length === 0 || (keys.elevenlabs && chosen.some((c) => c.provider === "eleven-tts") && !voice)} onClick={() => setConfirm(true)}>
+          <button className="primary" disabled={chosen.length === 0 || (keys.elevenlabs && chosen.some((c) => c.provider === "eleven-tts" || c.provider === "eleven-v4") && !voice)} onClick={() => setConfirm(true)}>
             Run {chosen.length} clips…
           </button>
         )}

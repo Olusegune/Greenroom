@@ -15,8 +15,8 @@ describe("lab clips", () => {
 
 describe("report", () => {
   it("lists rated clips, failures and averages, and escapes table pipes", () => {
-    const a = CLIPS[0]!;
-    const b = CLIPS[1]!;
+    const a = CLIPS.find((c) => c.id === "eleven-tts:plain")!;
+    const b = CLIPS.find((c) => c.id === "eleven-tts:laugh")!;
     const results: Record<string, Result> = {
       [a.id]: { state: "done", rating: 4, ms: 2400, note: "good | warm" },
       [b.id]: { state: "error", error: "ElevenLabs did not accept the key | check" },

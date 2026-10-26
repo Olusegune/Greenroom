@@ -236,12 +236,13 @@ fn make_clip(req: ClipReq) -> Result<Vec<u8>, String> {
         return Err("The test line is empty or too long.".into());
     }
     match req.provider.as_str() {
-        "eleven-tts" => {
+        p @ ("eleven-tts" | "eleven-v4") => {
             let voice = req
                 .voice
                 .filter(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_alphanumeric()))
                 .ok_or("Pick an ElevenLabs voice first.")?;
-            eleven_post(&format!("/v1/text-to-speech/{voice}?output_format=mp3_44100_128"), &json!({ "text": text, "model_id": "eleven_v3" }))
+            let model = if p == "eleven-v4" { "eleven_v4" } else { "eleven_v3" };
+            eleven_post(&format!("/v1/text-to-speech/{voice}?output_format=mp3_44100_128"), &json!({ "text": text, "model_id": model }))
         }
         "eleven-sfx" => eleven_post("/v1/sound-generation?output_format=mp3_44100_128", &json!({ "text": text, "duration_seconds": 3.0 })),
         "kie-tts" => kie_run("elevenlabs/text-to-speech-turbo-2-5", json!({ "text": text })),
