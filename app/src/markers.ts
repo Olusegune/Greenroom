@@ -5,7 +5,7 @@
 import { stemSets, type Plan } from "./audio";
 import { chosenTake } from "./direct";
 import { ENGINES } from "./engines";
-import { fpsOf, fpsValue, tcAt } from "./picture";
+import { baseName, fpsOf, fpsValue, frameToTc, secToFrame, tcAt } from "./picture";
 import { rightsFor } from "./trust";
 import type { Picture, Project, VoiceEntry } from "./types";
 
@@ -163,4 +163,50 @@ export function otioTimeline(project: Project, plan: Plan, fps: number, files: R
     null,
     2,
   );
+}
+
+
+/**
+ * A CMX 3600 edit decision list: the oldest cut list format, read by Resolve, Premiere, Avid, Pro Tools and most
+ * conform tools. One event per clip, record times from the picture's start timecode (or 01:00:00:00-style zero when no
+ * picture), source times counted from the start of each file. Overlapping clips are separate events at the same
+ * record time. Stems are named in comments. Non-drop frame only. It has not been opened in those programs yet.
+ */
+export function edl(project: Project, plan: Plan, fps: number, files: Record<string, string>, pic?: Picture): string {
+  const f = pic ? fpsOf(pic) : { num: fps, den: 1 };
+  const base = pic ? pic.startFrame : 0;
+  const fr = (sec: number) => secToFrame(sec, f);
+  const tc = (frame: number) => frameToTc(frame, f);
+  const chars = project.characters.map((c) => ({ id: c.id, name: c.name }));
+  type Ev = { stem: string; label: string; file: string; recIn: number; dur: number; srcIn: number; note: string };
+  const events: Ev[] = [];
+  const fileOf = (takeId: string, fallback: string) => (files[takeId] ? baseName(files[takeId]!) : fallback);
+  for (const stem of stemSets(plan, chars)) {
+    for (const it of plan.items.filter(stem.filter)) {
+      if (it.kind === "bed") {
+        const total = fr(it.seconds);
+        const loop = Math.max(1, fr(it.ref.seconds ?? it.seconds));
+        for (let at = 0; at < total; at += loop) events.push({ stem: stem.name, label: "Atmosphere", file: fileOf(it.ref.id, `${it.ref.id}.${it.ref.ext}`), recIn: fr(it.start) + at, dur: Math.min(loop, total - at), srcIn: 0, note: `volume ${project.bed.volume}` });
+        continue;
+      }
+      const line = project.lines.find((l) => l.id === it.lineId);
+      const n = line ? project.lines.indexOf(line) + 1 : 0;
+      const mc = it.kind === "music" ? project.music?.find((m) => m.take.id === it.ref.id) : undefined;
+      const label = it.kind === "speech" ? `${String(n).padStart(2, "0")} ${stem.name}` : it.kind === "music" ? (mc?.name ?? "Music") : `${String(n).padStart(2, "0")} sound clip`;
+      const note = [it.gainDb ? `gain ${it.gainDb.toFixed(1)} dB` : "", it.duck ? "dips under dialogue" : ""].filter(Boolean).join(", ");
+      events.push({ stem: stem.name, label, file: fileOf(it.ref.id, `${it.ref.id}.${it.ref.ext}`), recIn: fr(it.start), dur: fr(it.seconds), srcIn: fr(it.trimIn ?? 0), note });
+    }
+  }
+  const text = (s: string) => s.replace(/[\r\n]+/g, " ").trim();
+  const out = [`TITLE: ${text(project.name) || "Greenroom"}`, "FCM: NON-DROP FRAME", ""];
+  events
+    .filter((e) => e.dur >= 1)
+    .sort((a, b) => a.recIn - b.recIn || a.stem.localeCompare(b.stem))
+    .forEach((e, i) => {
+      out.push(`${String(i + 1).padStart(3, "0")}  AX       AA        C        ${tc(e.srcIn)} ${tc(e.srcIn + e.dur)} ${tc(base + e.recIn)} ${tc(base + e.recIn + e.dur)}`);
+      out.push(`* FROM CLIP NAME: ${text(e.file)}`);
+      out.push(`* COMMENT: ${text(e.stem)} - ${text(e.label)}${e.note ? ` (${e.note})` : ""}`);
+      out.push("");
+    });
+  return out.join("\r\n");
 }

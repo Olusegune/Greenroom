@@ -8,7 +8,7 @@ import { chosenTake } from "../direct";
 import { qualityFormat, soundEngineOf } from "../engines";
 import { makeSound } from "../generate";
 import { applyGain, fmtDb, fmtLufs, measure, planNormalization, TARGETS, type Measure } from "../loudness";
-import { audacityLabels, buildMarkers, cueSheetCsv, otioTimeline } from "../markers";
+import { audacityLabels, buildMarkers, cueSheetCsv, edl, otioTimeline } from "../markers";
 import { productionReportMd, projectRights, rightsCsv, rightsSummary, sha256Hex } from "../trust";
 import { APP_VERSION } from "../version";
 import { stopPlayback, takeAudio, takeBuffer, takeUrl } from "../media";
@@ -138,7 +138,7 @@ export default function Export() {
             await save("Stems", `${stem} - stem - ${s.name}.wav`.replace(/[^\p{L}\p{N} _.-]+/gu, ""), toBase64(encodeWav(applyGain(ch, np.gainDb), cfg.rate, wav(undefined, true))));
           }
         }
-        if (cfg.lines || cfg.otio) {
+        if (cfg.lines || cfg.otio || cfg.edl) {
           setStep("Copying the original lines…");
           for (const [i, l] of project.lines.entries()) {
             const t = chosenTake(l);
@@ -148,7 +148,7 @@ export default function Export() {
             written[t.id] = await save(`Lines - ${who}`, lineFileName(i, who, t.ext), a.audioB64);
           }
         }
-        if (cfg.otio) {
+        if (cfg.otio || cfg.edl) {
           for (const it of plan.items.filter((x) => x.kind !== "speech")) {
             const a = await takeAudio(project.id, it.ref.id);
             const mc = it.kind === "music" ? project.music?.find((m) => m.take.id === it.ref.id) : undefined;
@@ -160,6 +160,7 @@ export default function Export() {
         if (cfg.labels) await save("", `${stem} - markers.txt`, textBase64(audacityLabels(buildMarkers(project, plan))));
         if (cfg.cueSheet) await save("", `${stem} - cue sheet.csv`, textBase64(cueSheetCsv(project, plan, cfg.fps, library, pic)));
         if (cfg.otio) await save("", `${stem}.otio`, textBase64(otioTimeline(project, plan, cfg.fps, written, pic)));
+        if (cfg.edl) await save("", `${stem}.edl`, textBase64(edl(project, plan, cfg.fps, written, pic)));
         if (cfg.report) {
           const now = new Date().toISOString().slice(0, 16).replace("T", " ");
           await save("", `${stem} - production report.md`, textBase64(productionReportMd({ project, library, prices: engines.prices, appVersion: APP_VERSION, now })));
@@ -420,6 +421,7 @@ export default function Export() {
         {check("markersInWav", "Markers inside the WAV files", "One at the start of each line. Shown by Audition, Reaper, Pro Tools and most editors.")}
         {check("labels", "A label track (.txt)", "Imports into Audacity and Reaper.")}
         {check("cueSheet", "A cue sheet (.csv)", "Every line with its timecode, voice, model and text.")}
+        {check("edl", "A cut list (.edl)", "The classic CMX 3600 list that most editing and audio programs can conform from. One event for each clip, at its timecode.")}
         {check("otio", "A timeline for editors (.otio)", "A track for each stem with clips at their exact times, plus the video if you added one. Includes the original files it points to.")}
           </div>
         </details>
@@ -432,7 +434,7 @@ export default function Export() {
         {check("manifest", "Integrity manifest", "The SHA-256 of every file saved, so a changed file can be spotted later.")}
           </div>
         </details>
-        {cfg.otio || cfg.cueSheet ? (
+        {cfg.otio || cfg.edl || cfg.cueSheet ? (
           <label className="field" style={{ maxWidth: 220 }}>
             Frame rate for timecode
             <select value={cfg.fps} onChange={(e) => set({ fps: Number(e.target.value) })}>
@@ -448,7 +450,7 @@ export default function Export() {
           {plan.items.filter((i) => i.kind === "speech").length} lines, about {fmtTime(plan.total)} long.
         </p>
         <div className="row wrap">
-          <button className="primary" disabled={busy || plan.items.length === 0 || !(cfg.whole || cfg.scenes || cfg.stems || cfg.lines || cfg.labels || cfg.cueSheet || cfg.otio || cfg.report)} onClick={() => void doExport()}>
+          <button className="primary" disabled={busy || plan.items.length === 0 || !(cfg.whole || cfg.scenes || cfg.stems || cfg.lines || cfg.labels || cfg.cueSheet || cfg.otio || cfg.edl || cfg.report)} onClick={() => void doExport()}>
             {busy ? "Exporting…" : "Export"}
           </button>
           <button

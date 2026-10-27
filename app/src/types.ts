@@ -101,6 +101,8 @@ export interface ExportCfg {
   labels: boolean;
   cueSheet: boolean;
   otio: boolean;
+  /** A CMX 3600 cut list (.edl). */
+  edl?: boolean;
   /** With a picture: make the mix exactly as long as the picture. */
   matchPicture: boolean;
   /** A production report and a rights register. */

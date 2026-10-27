@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { planTimeline } from "./audio";
-import { audacityLabels, buildMarkers, cueSheetCsv, fileUrl, otioTimeline, timecode } from "./markers";
+import { audacityLabels, buildMarkers, cueSheetCsv, edl, fileUrl, otioTimeline, timecode } from "./markers";
 import { DEFAULT_DIRECTION, newProject, type Line, type Project } from "./types";
 
 const take = (id: string, seconds: number) => ({ id, at: "", model: "eleven_v4" as const, ext: "mp3" as const, voiceId: "voiceX", sent: "[sighs] hi, \"you\"", seconds });
@@ -176,5 +176,66 @@ describe("OpenTimelineIO with music", () => {
     expect(c.source_range.duration.value).toBe(8 * 24);
     expect(c.media_reference.available_range.duration.value).toBe(30 * 24);
     expect(c.metadata.greenroom).toMatchObject({ kind: "music", gain_db: -6, ducks_under_dialogue: true });
+  });
+});
+
+describe("CMX 3600 cut list", () => {
+  const files = { ta: "C:/x/a.wav", tb: "C:/x/b.mp3", s1: "C:/x/door.mp3", bed1: "C:/x/rain.mp3" };
+  const pic = { path: "D:/Film/Rough Cut.mov", name: "Rough Cut.mov", fpsNum: 24000, fpsDen: 1001, fpsKnown: true, duration: 12, width: 1920, height: 1080, startFrame: 86400 };
+  const events = (t: string) => t.split("\r\n").filter((l) => /^\d{3} /.test(l));
+
+  it("starts with a title and the frame-count mode, then numbers events in time order", () => {
+    const p = project();
+    const text = edl(p, planTimeline(p), 24, files);
+    const lines = text.split("\r\n");
+    expect(lines.slice(0, 2)).toEqual(["TITLE: Late Delivery", "FCM: NON-DROP FRAME"]);
+    const ev = events(text);
+    expect(ev.length).toBeGreaterThan(3);
+    ev.forEach((l, i) => expect(l.startsWith(String(i + 1).padStart(3, "0") + "  AX       AA        C        ")).toBe(true));
+    const recIns = ev.map((l) => l.trim().split(/\s+/)[6]!);
+    expect([...recIns].sort()).toEqual(recIns);
+  });
+
+  it("gives every event four timecodes, with source times counted from the start of the file", () => {
+    const p = project();
+    const ev = events(edl(p, planTimeline(p), 24, files));
+    for (const l of ev) {
+      const tcs = l.trim().split(/\s+/).slice(-4);
+      expect(tcs).toHaveLength(4);
+      for (const t of tcs) expect(t).toMatch(/^\d\d:\d\d:\d\d:\d\d$/);
+    }
+    expect(ev[0]!.trim().split(/\s+/).slice(-4)).toEqual(["00:00:00:00", "00:00:02:00", "00:00:00:00", "00:00:02:00"]);
+  });
+
+  it("names the original file and the stem for each event", () => {
+    const p = project();
+    const text = edl(p, planTimeline(p), 24, files);
+    expect(text).toContain("* FROM CLIP NAME: a.wav");
+    expect(text).toContain("* COMMENT: ADA - 01 ADA (gain -3.0 dB)");
+    expect(text).toContain("* FROM CLIP NAME: door.mp3");
+  });
+
+  it("puts record times on the picture's start timecode and keeps overlapping clips as separate events", () => {
+    const p = project();
+    p.lines[1]!.characterId = "c1";
+    p.lines[0]!.cue = 0;
+    p.lines[1]!.cue = 1;
+    const ev = events(edl(p, planTimeline(p, undefined, { minTotal: pic.duration }), 24, files, pic));
+    const at = (n: number) => ev[n]!.trim().split(/\s+/).slice(-2);
+    expect(at(0)[0]).toBe("01:00:00:00");
+    expect(ev.filter((l) => l.includes("01:00:01:")).length).toBeGreaterThan(0);
+    expect(ev.length).toBe(new Set(ev.map((l) => l.slice(0, 3))).size);
+  });
+
+  it("loops the atmosphere to its length, skips clips shorter than a frame, and keeps music trims as the source start", () => {
+    const p = project();
+    p.music = [{ id: "m", name: "Theme", take: { id: "mt", ext: "wav", seconds: 20 }, start: 0, gainDb: -6, fadeIn: 0, fadeOut: 1, trimIn: 5, length: 3, duck: true, source: "" }];
+    const text = edl(p, planTimeline(p), 24, { ...files, mt: "C:/x/theme.wav" });
+    const atmos = text.split("\r\n").filter((l) => l.includes("Atmosphere") && l.startsWith("* COMMENT"));
+    expect(atmos.length).toBeGreaterThan(1);
+    const music = events(text).find((_, i, a) => text.includes("Theme") && a[i] && true);
+    expect(text).toContain("* COMMENT: Music - Theme (gain -6.0 dB, dips under dialogue)");
+    expect(events(text).some((l) => l.trim().split(/\s+/).slice(-4).slice(0, 2).join(" ") === "00:00:05:00 00:00:08:00")).toBe(true);
+    expect(music).toBeDefined();
   });
 });
