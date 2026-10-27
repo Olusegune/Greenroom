@@ -69,7 +69,7 @@ export default function Lab() {
     <section>
       <div>
         <h1>Voice lab</h1>
-        <p className="lede">The same lines from each provider and model. Play them, rate 1 to 5, then save the report. Nothing runs until you confirm.</p>
+        <p className="lede">The same lines from each provider and model. Play them, rate 1 to 5, then save the report. Nothing runs until you confirm. To compare accents, use Accent test under Voices.</p>
       </div>
       {keys.elevenlabs && (
         <div className="row">
@@ -87,8 +87,10 @@ export default function Lab() {
         </div>
       )}
       {(["Speech with feeling", "Body sounds"] as const).map((g) => (
-        <div key={g} className="card">
-          <h2>{g}</h2>
+        <details key={g} className="card fold" open>
+          <summary>
+            <strong>{g}</strong> <span className="muted small">{CLIPS.filter((c) => c.group === g).length} clips</span>
+          </summary>
           {CLIPS.filter((c) => c.group === g).map((c) => {
             const usable = keys[PROVIDER_INFO[c.provider].key];
             const r = results[c.id];
@@ -118,7 +120,7 @@ export default function Lab() {
               </div>
             );
           })}
-        </div>
+        </details>
       ))}
       <div className="bar">
         <span className="muted">{chosen.length} clips selected</span>

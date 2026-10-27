@@ -6,6 +6,25 @@ import { Note, useBusy } from "../ui";
 import { BASIS_LABEL } from "../trust";
 import type { ConsentBasis } from "../types";
 
+/** One engine: a folded card with its mark, name and status always visible, and its settings inside. */
+function EngineCard({ mark, tone, title, status, ok, blurb, children, open }: { mark: string; tone: string; title: string; status: string; ok?: boolean; blurb: string; children?: React.ReactNode; open?: boolean }) {
+  return (
+    <details className="card eng fold" open={open}>
+      <summary>
+        <span className={`eng-mark ${tone}`} aria-hidden="true">
+          {mark}
+        </span>
+        <span className="eng-id">
+          <strong>{title}</strong>
+          <span className="muted small">{blurb}</span>
+        </span>
+        <span className={ok ? "badge ok" : "badge"}>{status}</span>
+      </summary>
+      <div className="stack eng-body">{children}</div>
+    </details>
+  );
+}
+
 export default function Engines() {
   const { keys, engines, saveEngines, go } = useApp();
   return (
@@ -15,41 +34,38 @@ export default function Engines() {
         <p className="lede">An engine is where a voice comes from. Each voice belongs to one engine, so choosing a voice in Cast chooses the engine. Set up the ones you want here.</p>
       </div>
 
-      <div className="card stack">
-        <div className="row between">
-          <h2>{ENGINES.elevenlabs.label}</h2>
-          <span className={keys.elevenlabs ? "badge ok" : "badge"}>{keys.elevenlabs ? "Key saved" : "Needs a key"}</span>
-        </div>
+      <EngineCard mark="E" tone="e1" title={ENGINES.elevenlabs.label} status={keys.elevenlabs ? "Key saved" : "Needs a key"} ok={keys.elevenlabs} blurb="Speech, sound effects, voice design and cloning">
         <p className="muted small">{ENGINES.elevenlabs.blurb}</p>
-        <label className="field" style={{ maxWidth: 320 }}>
-          Speech model
-          <select value={engines.elevenModel} onChange={(e) => saveEngines({ ...engines, elevenModel: e.target.value as ElevenModel })}>
-            <option value="eleven_v4">Eleven v4 (newest, best)</option>
-            <option value="eleven_v3">Eleven v3</option>
-          </select>
-        </label>
-        <label className="field" style={{ maxWidth: 420 }}>
-          Audio quality
-          <select value={engines.quality ?? "standard"} onChange={(e) => saveEngines({ ...engines, quality: e.target.value as Quality })}>
-            {QUALITIES.map((q) => (
-              <option key={q.id} value={q.id}>
-                {q.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="row wrap">
+          <label className="field" style={{ maxWidth: 320, flex: 1 }}>
+            Speech model
+            <select value={engines.elevenModel} onChange={(e) => saveEngines({ ...engines, elevenModel: e.target.value as ElevenModel })}>
+              <option value="eleven_v4">Eleven v4 (newest, best)</option>
+              <option value="eleven_v3">Eleven v3</option>
+            </select>
+          </label>
+          <label className="field" style={{ maxWidth: 420, flex: 1 }}>
+            Audio quality
+            <select value={engines.quality ?? "standard"} onChange={(e) => saveEngines({ ...engines, quality: e.target.value as Quality })}>
+              {QUALITIES.map((q) => (
+                <option key={q.id} value={q.id}>
+                  {q.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <p className="muted small">{QUALITIES.find((q) => q.id === (engines.quality ?? "standard"))?.note} Lossless sources keep a 24-bit export clean; an MP3 source cannot gain detail it does not have.</p>
         {!keys.elevenlabs && (
           <div>
             <button onClick={() => go("settings")}>Add the key in Settings</button>
           </div>
         )}
-      </div>
+      </EngineCard>
 
-      <Simple title={ENGINES.voicekiller.label} ready={keys.voicekiller} blurb={ENGINES.voicekiller.blurb} extra={<VkClone />} />
-      <Simple title={ENGINES.kie.label} ready={keys.kie} blurb={ENGINES.kie.blurb} />
-      <div className="card stack">
-        <h2>Sound clips and atmosphere</h2>
+      <Simple mark="V" tone="e2" title={ENGINES.voicekiller.label} ready={keys.voicekiller} short="About two thousand voices; no inline sound tags" blurb={ENGINES.voicekiller.blurb} extra={<VkClone />} />
+      <Simple mark="K" tone="e3" title={ENGINES.kie.label} ready={keys.kie} short="Preset voices, sound effects, the AI Director and Suno music" blurb={ENGINES.kie.blurb} />
+      <EngineCard mark="S" tone="e4" title="Sound clips and atmosphere" status={soundEngineOf(engines).label.split(" ")[0] ?? ""} ok={!!keys[soundEngineOf(engines).key]} blurb="Which engine makes sneezes, doors and the background">
         <p className="muted small">Which engine makes sneezes, doors, footsteps and the background atmosphere. This is separate from the voices, so a project can speak with one engine and make its sounds with another.</p>
         <label className="field" style={{ maxWidth: 360 }}>
           Sound engine
@@ -68,21 +84,18 @@ export default function Engines() {
           </div>
         )}
         <p className="muted small">Music is added from files on the Timeline. Making music with an engine such as Suno is not built yet.</p>
-      </div>
+      </EngineCard>
+
       <Piper />
       <LocalServer />
     </section>
   );
 }
 
-function Simple({ title, ready, blurb, extra }: { title: string; ready: boolean; blurb: string; extra?: React.ReactNode }) {
+function Simple({ title, ready, blurb, short, extra, mark, tone }: { title: string; ready: boolean; blurb: string; short: string; extra?: React.ReactNode; mark: string; tone: string }) {
   const { go } = useApp();
   return (
-    <div className="card stack">
-      <div className="row between">
-        <h2>{title}</h2>
-        <span className={ready ? "badge ok" : "badge"}>{ready ? "Key saved" : "Needs a key"}</span>
-      </div>
+    <EngineCard mark={mark} tone={tone} title={title} status={ready ? "Key saved" : "Needs a key"} ok={ready} blurb={short}>
       <p className="muted small">{blurb}</p>
       {!ready && (
         <div>
@@ -90,7 +103,7 @@ function Simple({ title, ready, blurb, extra }: { title: string; ready: boolean;
         </div>
       )}
       {ready && extra}
-    </div>
+    </EngineCard>
   );
 }
 
@@ -164,11 +177,7 @@ function Piper() {
   };
 
   return (
-    <div className="card stack">
-      <div className="row between">
-        <h2>{ENGINES.piper.label}</h2>
-        <span className={st?.installed ? "badge ok" : "badge"}>{st?.installed ? "Installed" : "Not installed"}</span>
-      </div>
+    <EngineCard mark="P" tone="e5" title={ENGINES.piper.label} status={st?.installed ? "Installed" : "Not installed"} ok={!!st?.installed} blurb="Free, runs on this computer, no internet needed">
       <p className="muted small">{ENGINES.piper.blurb} Each voice has its own licence, shown in its model card on the Piper voices page.</p>
       <div className="row wrap">
         {!st?.installed && (
@@ -191,7 +200,7 @@ function Piper() {
           ))}
         </div>
       )}
-    </div>
+    </EngineCard>
   );
 }
 
@@ -222,11 +231,7 @@ function LocalServer() {
     });
 
   return (
-    <div className="card stack">
-      <div className="row between">
-        <h2>{ENGINES.local.label}</h2>
-        <span className="badge">Optional</span>
-      </div>
+    <EngineCard mark="L" tone="e6" title={ENGINES.local.label} status="Optional" blurb="Your own speech server on this computer">
       <p className="muted small">{ENGINES.local.blurb} It must speak the OpenAI-style speech API (<code>/v1/audio/speech</code>) and run on this computer. For privacy, only 127.0.0.1 and localhost addresses are accepted.</p>
       <div className="row wrap">
         <label className="field" style={{ flex: 2, minWidth: "min(220px, 100%)" }}>
@@ -267,6 +272,6 @@ function LocalServer() {
           Add voice
         </button>
       </div>
-    </div>
+    </EngineCard>
   );
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { api, inApp } from "../api";
 import { fromBase64, textBase64 } from "../audio";
+import { Avatar } from "../avatar";
 import { useApp } from "../ctx";
 import { chosenTake } from "../direct";
 import { DEFAULT_PRICES, ENGINES, type Engine, type Prices } from "../engines";
@@ -87,6 +88,15 @@ export default function Studio() {
     }
   };
 
+  const fingerprinted = takes.filter((x) => x.t.provenance?.sha256).length;
+  const over = bv.budget !== null && bv.spent > bv.budget;
+  const priceField = (label: string, value: number | undefined, on: (v: string) => void, step = 0.001) => (
+    <label key={label} className="field">
+      {label}
+      <input type="number" min={0} step={step} value={value || ""} onChange={(e) => on(e.target.value)} placeholder="unknown" />
+    </label>
+  );
+
   return (
     <section>
       <div>
@@ -94,86 +104,95 @@ export default function Studio() {
         <p className="lede">Rights, cost and take history for this project. It records and warns; it never stops you working.</p>
       </div>
 
-      <div className="card stack">
-        <div className="row between wrap">
-          <h2>Voice rights</h2>
-          <span className="row wrap small">
-            <span className="badge ok">{sum.clear} clear</span>
-            <span className="badge">{sum.review} to review</span>
-            <span className={sum.missing ? "badge warn" : "badge"}>{sum.missing} need consent</span>
-          </span>
+      <div className="stats" role="group" aria-label="Summary">
+        <div className={sum.missing ? "stat warn" : "stat"}>
+          <span className="stat-n">{rows.length}</span>
+          <span className="stat-l">voice{rows.length === 1 ? "" : "s"} used</span>
+          <span className="stat-s">{sum.missing ? `${sum.missing} need consent` : sum.review ? `${sum.review} to review` : "all clear"}</span>
         </div>
-        {rows.length === 0 ? (
-          <p className="muted small">No voices are used in this project yet.</p>
-        ) : (
-          <div className="stack">
-            {rows.map((r) => (
-              <div key={r.voiceId + r.engine} className="take" style={{ alignItems: "flex-start" }}>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <strong>{r.name}</strong> <span className="muted small">{ENGINES[r.engine].label} · used by {r.usedBy.join(", ")}</span>
-                  <br />
-                  <span className="small muted">{r.consent ? `Consent: ${r.consent.speaker}${r.consent.reference ? " (" + r.consent.reference + ")" : ""}` : "No consent record"} · {r.licence === "commercial" ? "cleared for commercial use" : r.licence === "personal" ? "personal use only" : "commercial use not noted"}</span>
-                  {r.issues.map((i) => (
-                    <span key={i} className="small" style={{ display: "block", color: "var(--warn)" }}>
-                      {i}
-                    </span>
-                  ))}
-                </span>
-                <span className={r.level === "clear" ? "badge ok" : r.level === "missing" ? "badge warn" : "badge"}>{r.level === "missing" ? "consent needed" : r.level === "review" ? "to review" : "clear"}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <div>
-          <button onClick={() => go("voices")}>Edit rights in Voices</button>
+        <div className={over ? "stat warn" : "stat"}>
+          <span className="stat-n">{money(total, prices.currency)}</span>
+          <span className="stat-l">estimated spend</span>
+          <span className="stat-s">{bv.budget !== null ? (over ? "over budget" : `${money(bv.left ?? 0, prices.currency)} left`) : "no budget set"}</span>
+        </div>
+        <div className="stat">
+          <span className="stat-n">{takes.length}</span>
+          <span className="stat-l">take{takes.length === 1 ? "" : "s"} in use</span>
+          <span className="stat-s">{fingerprinted} fingerprinted</span>
         </div>
       </div>
 
       <div className="card stack">
-        <h2>Prices and budget</h2>
+        <div className="row between wrap">
+          <h2>Voice rights</h2>
+          <button className="sm" onClick={() => go("voices")}>
+            Edit rights in Voices
+          </button>
+        </div>
+        {rows.length === 0 ? (
+          <p className="muted small">No voices are used in this project yet.</p>
+        ) : (
+          <div className="stack" style={{ gap: 0 }}>
+            {rows.map((r) => {
+              const v = library.find((x) => x.id === r.voiceId);
+              return (
+                <div key={r.voiceId + r.engine} className="right-row">
+                  <Avatar seed={r.voiceId + r.name} gender={v?.gender} size={40} />
+                  <span className="right-text">
+                    <strong>{r.name}</strong>
+                    <span className="muted small">
+                      {ENGINES[r.engine].label} · {r.usedBy.join(", ")}
+                    </span>
+                    <span className="muted small">
+                      {r.consent ? `Consent: ${r.consent.speaker}` : "No consent record"} · {r.licence === "commercial" ? "commercial use cleared" : r.licence === "personal" ? "personal use only" : "commercial use not noted"}
+                    </span>
+                    {r.issues.map((i) => (
+                      <span key={i} className="small" style={{ color: "var(--warn)" }}>
+                        {i}
+                      </span>
+                    ))}
+                  </span>
+                  <span className={r.level === "clear" ? "badge ok" : r.level === "missing" ? "badge warn" : "badge"}>{r.level === "missing" ? "consent needed" : r.level === "review" ? "to review" : "clear"}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <details className="card stack fold">
+        <summary>
+          <strong>Prices and budget</strong>{" "}
+          <span className="muted small">{bv.budget !== null ? `budget ${money(bv.budget, prices.currency)}` : "enter your prices to see estimates"}</span>
+        </summary>
         <p className="muted small">Greenroom cannot see your prices. Enter what your plans cost to see estimates and a budget warning. Leave a price empty if you do not know it: only characters are counted then. Offline engines are free.</p>
-        <div className="row wrap">
-          <label className="field" style={{ width: 110 }}>
+        <div className="price-grid">
+          <label className="field">
             Currency
             <input type="text" value={prices.currency} maxLength={4} onChange={(e) => setPrices({ currency: e.target.value.toUpperCase() })} />
           </label>
-          {PAID.map((e) => (
-            <label key={e} className="field" style={{ width: 170 }}>
-              {ENGINES[e].label} per 1,000 characters
-              <input type="number" min={0} step={0.001} value={prices.perKChars[e] ?? ""} onChange={(ev) => setKPrice(e, ev.target.value)} placeholder="unknown" />
-            </label>
-          ))}
-        </div>
-        <div className="row wrap">
-          <label className="field" style={{ width: 170 }}>
-            Per sound clip
-            <input type="number" min={0} step={0.001} value={prices.sfxClip || ""} onChange={(e) => setPrices({ sfxClip: Math.max(0, Number(e.target.value)) })} placeholder="unknown" />
-          </label>
-          <label className="field" style={{ width: 170 }}>
-            Per AI Director call
-            <input type="number" min={0} step={0.001} value={prices.directorCall || ""} onChange={(e) => setPrices({ directorCall: Math.max(0, Number(e.target.value)) })} placeholder="unknown" />
-          </label>
-          <label className="field" style={{ width: 170 }}>
-            Per voice design preview
-            <input type="number" min={0} step={0.001} value={prices.designPreview || ""} onChange={(e) => setPrices({ designPreview: Math.max(0, Number(e.target.value)) })} placeholder="unknown" />
-          </label>
-          <label className="field" style={{ width: 170 }}>
-            Per music request (Suno)
-            <input type="number" min={0} step={0.001} value={prices.musicRun || ""} onChange={(e) => setPrices({ musicRun: Math.max(0, Number(e.target.value)) })} placeholder="unknown" />
-          </label>
-          <label className="field" style={{ width: 200 }}>
-            Budget for this project ({prices.currency})
+          <label className="field">
+            Budget for this project
             <input type="number" min={0} step={0.5} value={project.budget ?? ""} onChange={(e) => edit((p) => ({ ...p, budget: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value)) }))} placeholder="no limit" />
           </label>
+        </div>
+        <h3>Speech, per 1,000 characters</h3>
+        <div className="price-grid">{PAID.map((e) => priceField(ENGINES[e].label, prices.perKChars[e], (v) => setKPrice(e, v)))}</div>
+        <h3>Everything else, each</h3>
+        <div className="price-grid">
+          {priceField("Sound clip", prices.sfxClip, (v) => setPrices({ sfxClip: Math.max(0, Number(v)) }))}
+          {priceField("AI Director call", prices.directorCall, (v) => setPrices({ directorCall: Math.max(0, Number(v)) }))}
+          {priceField("Voice design preview", prices.designPreview, (v) => setPrices({ designPreview: Math.max(0, Number(v)) }))}
+          {priceField("Music request (Suno)", prices.musicRun, (v) => setPrices({ musicRun: Math.max(0, Number(v)) }))}
         </div>
         {bv.budget !== null && (
           <div>
             <div className="progress" aria-hidden="true">
-              <i style={{ width: `${Math.min(100, (bv.spent / bv.budget) * 100)}%`, background: bv.spent > bv.budget ? "var(--err)" : undefined }} />
+              <i style={{ width: `${Math.min(100, (bv.spent / bv.budget) * 100)}%`, background: over ? "var(--err)" : undefined }} />
             </div>
-            <p className={bv.spent > bv.budget ? "err-text small" : "muted small"} role="status">
+            <p className={over ? "err-text small" : "muted small"} role="status">
               {money(bv.spent, prices.currency)} spent of {money(bv.budget, prices.currency)}
-              {bv.spent > bv.budget ? ": over budget." : `, ${money(bv.left ?? 0, prices.currency)} left.`}
+              {over ? ": over budget." : `, ${money(bv.left ?? 0, prices.currency)} left.`}
             </p>
           </div>
         )}
@@ -204,16 +223,20 @@ export default function Studio() {
             </div>
           </details>
         )}
-      </div>
+      </details>
 
-      <div className="card stack">
+      <details className="card stack fold">
+        <summary>
+          <strong>Where each take came from</strong> <span className="muted small">{takes.length} take{takes.length === 1 ? "" : "s"}, each with a fingerprint</span>
+        </summary>
         <div className="row between wrap">
-          <h2>Where each take came from</h2>
+          <p className="muted small" style={{ flex: 1, minWidth: 220, margin: 0 }}>
+            Every take keeps what produced it and a fingerprint of the audio file. Checking re-reads each file and reports a changed or missing one.
+          </p>
           <button onClick={() => void verify()} disabled={busy || takes.length === 0}>
             {busy ? "Checking…" : "Check the fingerprints"}
           </button>
         </div>
-        <p className="muted small">Every take keeps what produced it and a fingerprint of the audio file. Checking re-reads each file in the project folder and compares: a changed or missing file is reported.</p>
         {takes.length === 0 ? (
           <p className="muted small">No takes yet.</p>
         ) : (
@@ -236,17 +259,21 @@ export default function Studio() {
             })}
           </div>
         )}
-      </div>
+      </details>
 
       <div className="card stack">
-        <h2>Production report</h2>
-        <p className="muted small">A document for a producer or legal team: what was made, which AI voices were used and on what rights, an AI disclosure, estimated cost, and every take with its fingerprint. It also saves a rights register as a spreadsheet.</p>
-        {sum.missing > 0 && <Note kind="warn">{sum.missing} cloned voice{sum.missing === 1 ? " has" : "s have"} no consent record. The report will list that clearly.</Note>}
-        <div className="row wrap">
+        <div className="row between wrap">
+          <div>
+            <h2>Production report</h2>
+            <p className="muted small" style={{ margin: 0 }}>
+              For a producer or legal team: what was made, which AI voices and on what rights, an AI disclosure, estimated cost, and a rights register spreadsheet.
+            </p>
+          </div>
           <button className="primary" onClick={() => void saveReport()} disabled={busy}>
             Save the production report
           </button>
         </div>
+        {sum.missing > 0 && <Note kind="warn">{sum.missing} cloned voice{sum.missing === 1 ? " has" : "s have"} no consent record. The report will list that clearly.</Note>}
         {saved.map((p) => (
           <div key={p} className="row between small">
             <code style={{ wordBreak: "break-all" }}>{p}</code>
