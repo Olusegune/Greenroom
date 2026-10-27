@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import { historyFor, restore, snapshot } from "../arrangement";
 import { planTimeline, type Placed } from "../audio";
 import { useApp } from "../ctx";
 import { Play, Plus, Stop, Trash } from "../icons";
@@ -38,7 +37,7 @@ interface Lane {
 }
 
 export default function Timeline() {
-  const { project, edit, toast, go } = useApp();
+  const { project, edit, toast, go, undo, redo, canUndo, canRedo } = useApp();
   const { busy, run } = useBusy();
   const scroller = useRef<HTMLDivElement>(null);
   const audio = useRef<HTMLAudioElement>(null);
@@ -148,22 +147,8 @@ export default function Timeline() {
   };
 
   // ---- editing --------------------------------------------------------------------------------------------------
-  const hist = project ? historyFor(project.id) : null;
-  /** Every change on this screen goes through here so it can be undone. Quick runs with the same key become one step. */
-  const change = (key: string, fn: (p: NonNullable<typeof project>) => NonNullable<typeof project>) => {
-    if (project && hist) hist.record(snapshot(project), key, Date.now());
-    edit(fn);
-  };
-  const undo = () => {
-    if (!project || !hist) return;
-    const prev = hist.undo(snapshot(project));
-    if (prev) edit((p) => restore(p, prev));
-  };
-  const redo = () => {
-    if (!project || !hist) return;
-    const next = hist.redo(snapshot(project));
-    if (next) edit((p) => restore(p, next));
-  };
+  /** Every change on this screen is an undo step; quick runs with the same key (a slider, arrow nudges) are one. */
+  const change = (key: string, fn: (p: NonNullable<typeof project>) => NonNullable<typeof project>) => edit(fn, key);
   const setCue = (id: string, sec: number | undefined) =>
     change(`cue:${id}`, (p) => ({
       ...p,
@@ -291,15 +276,7 @@ export default function Timeline() {
   const width = LABEL + total * px + 60;
 
   return (
-    <section
-      onKeyDown={(e) => {
-        const t = e.target as HTMLElement;
-        if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || !(e.ctrlKey || e.metaKey)) return;
-        const k = e.key.toLowerCase();
-        if (k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
-        else if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); redo(); }
-      }}
-    >
+    <section    >
       <div>
         <h1>Timeline</h1>
         <p className="lede">Arrange the performance: drag a line to move it, let dialogue overlap, and add music that dips under the voices. Lines that cross each other from the same character crossfade by themselves.</p>
@@ -312,10 +289,10 @@ export default function Timeline() {
           </button>
           <code className="pic-tc" title="Playhead">{clock(t)}</code>
           <span className="spacer" />
-          <button className="sm" onClick={undo} disabled={!hist?.canUndo()} title="Undo (Ctrl+Z)">
+          <button className="sm" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">
             Undo
           </button>
-          <button className="sm" onClick={redo} disabled={!hist?.canRedo()} title="Redo (Ctrl+Shift+Z)">
+          <button className="sm" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">
             Redo
           </button>
           <label className="row small muted">

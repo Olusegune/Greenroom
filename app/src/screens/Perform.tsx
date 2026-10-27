@@ -30,7 +30,7 @@ export default function Perform() {
   const dict: Pronunciation[] = project.pronunciations ?? [];
   const charOf = (l: Line): Character | undefined => project.characters.find((c) => c.id === l.characterId);
   const voiceOf = (l: Line): VoiceEntry | undefined => library.find((v) => v.id === charOf(l)?.voiceId);
-  const patchLine = (id: string, fn: (l: Line) => Line) => edit((p) => ({ ...p, lines: p.lines.map((l) => (l.id === id ? fn(l) : l)) }));
+  const patchLine = (id: string, fn: (l: Line) => Line, key?: string) => edit((p) => ({ ...p, lines: p.lines.map((l) => (l.id === id ? fn(l) : l)) }), key);
 
   const spend = (lines: Line[]) => {
     const chars = lines.reduce((n, l) => n + (voiceOf(l) ? plan(l, voiceOf(l)!, model, dict).text.length : 0), 0);
@@ -54,7 +54,7 @@ export default function Perform() {
     try {
       for (let i = 0; i < count; i++) {
         const t = await makeTake(project.id, line, voice, model, dict, qualityFormat(engines.quality));
-        patchLine(line.id, (l) => ({ ...l, takes: [...l.takes, t], chosen: t.id }));
+        patchLine(line.id, (l) => ({ ...l, takes: [...l.takes, t], chosen: t.id }), "~take");
         const sent = t.provenance?.chars ?? chars;
         addLedger({ kind: "speech", engine: e.label, chars: sent, items: [{ kind: "speech", engine: voice.provider, chars: sent }] });
       }
@@ -83,7 +83,7 @@ export default function Perform() {
       try {
         const v = voiceOf(line)!;
         const t = await makeTake(project.id, line, v, model, dict, qualityFormat(engines.quality));
-        patchLine(line.id, (l) => ({ ...l, takes: [...l.takes, t], chosen: t.id }));
+        patchLine(line.id, (l) => ({ ...l, takes: [...l.takes, t], chosen: t.id }), "~take");
         const sent = t.provenance?.chars ?? 0;
         addLedger({ kind: "speech", engine: ENGINES[v.provider].label, chars: sent, items: [{ kind: "speech", engine: v.provider, chars: sent }] });
       } catch (e) {

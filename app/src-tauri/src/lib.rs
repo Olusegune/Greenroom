@@ -3,6 +3,7 @@
 
 mod eleven;
 mod kie;
+mod history;
 mod local;
 mod mux;
 mod net;
@@ -364,6 +365,51 @@ async fn music_generate(app: tauri::AppHandle, project: String, req: kie::MusicR
 }
 
 #[tauri::command]
+fn version_save(app: tauri::AppHandle, project: String, label: String) -> Result<Option<String>, String> {
+    history::version_save(&root(&app)?, &project, &label, history::now_secs())
+}
+
+#[tauri::command]
+fn version_list(app: tauri::AppHandle, project: String) -> Result<Vec<history::VersionInfo>, String> {
+    history::version_list(&root(&app)?, &project)
+}
+
+#[tauri::command]
+fn version_load(app: tauri::AppHandle, project: String, id: String) -> Result<String, String> {
+    history::version_load(&root(&app)?, &project, &id)
+}
+
+#[tauri::command]
+async fn backup_now(app: tauri::AppHandle, project: String) -> Result<String, String> {
+    let r = root(&app)?;
+    let v = app.package_info().version.to_string();
+    blocking(move || Ok(history::backup_now(&r, &project, &v, history::now_secs())?.to_string_lossy().into_owned())).await
+}
+
+/// Runs when a project is opened: makes a backup if the last one is over a day old and keeps the newest five.
+#[tauri::command]
+async fn backup_auto(app: tauri::AppHandle, project: String) -> Result<Option<String>, String> {
+    let r = root(&app)?;
+    let v = app.package_info().version.to_string();
+    blocking(move || Ok(history::backup_auto(&r, &project, &v, history::now_secs(), std::time::Duration::from_secs(86_400), 5)?.map(|p| p.to_string_lossy().into_owned()))).await
+}
+
+#[tauri::command]
+fn backup_list(app: tauri::AppHandle) -> Result<Vec<history::BackupInfo>, String> {
+    Ok(history::backup_list(&root(&app)?))
+}
+
+#[tauri::command]
+async fn backup_restore(app: tauri::AppHandle, file: String) -> Result<String, String> {
+    let r = root(&app)?;
+    blocking(move || {
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+        history::backup_restore(&r, &file, &format!("p-{nanos:x}"), &history::iso_of(&history::stamp(history::now_secs())))
+    })
+    .await
+}
+
+#[tauri::command]
 fn sheet_load(app: tauri::AppHandle) -> Result<String, String> {
     Ok(store::sheet_load(&root(&app)?))
 }
@@ -524,7 +570,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             key_status, set_key, clear_key, run_clip, voices_mine, voices_voicekiller, voices_shared, voice_add_shared, voice_design, voice_design_save, voice_clone,
-            voice_delete, preview_fetch, project_list, project_load, project_save, take_write, take_read, export_write, library_load, library_save, casts_load, casts_save, sheet_load, sheet_save, sheet_audio_write, sheet_audio_read, sheet_export,
+            voice_delete, preview_fetch, project_list, project_load, project_save, take_write, take_read, export_write, library_load, library_save, casts_load, casts_save, version_save, version_list, version_load, backup_now, backup_auto, backup_list, backup_restore, sheet_load, sheet_save, sheet_audio_write, sheet_audio_read, sheet_export,
             save_report, audio_import, music_generate, ffmpeg_status, ffmpeg_install, video_mux, video_probe, video_allow, director_complete, engines_load, engines_save, piper_status, piper_install, piper_catalog, piper_install_voice, piper_remove_voice, local_voices
         ])
         .run(tauri::generate_context!())

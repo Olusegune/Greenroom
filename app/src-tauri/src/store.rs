@@ -25,7 +25,7 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
     fs::rename(&tmp, path).map_err(|_| "Could not finish saving.".to_string())
 }
 
-fn project_dir(root: &Path, id: &str) -> Result<PathBuf, String> {
+pub(crate) fn project_dir(root: &Path, id: &str) -> Result<PathBuf, String> {
     if !valid_id(id) {
         return Err(bad("project"));
     }
@@ -45,7 +45,10 @@ pub fn project_save(root: &Path, id: &str, json: &str) -> Result<(), String> {
         return Err("The project is too large to save.".into());
     }
     serde_json::from_str::<Value>(json).map_err(|_| "The project data was not valid.".to_string())?;
-    atomic_write(&project_dir(root, id)?.join("project.json"), json.as_bytes())
+    let dir = project_dir(root, id)?;
+    // Keep the state about to be replaced as a version when the newest one is old enough.
+    crate::history::auto_before_save(root, id, crate::history::AUTO_VERSION_EVERY, crate::history::now_secs());
+    atomic_write(&dir.join("project.json"), json.as_bytes())
 }
 
 pub fn project_load(root: &Path, id: &str) -> Result<String, String> {

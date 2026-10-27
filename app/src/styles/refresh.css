@@ -170,3 +170,7 @@ details.card > summary { cursor: pointer; }
 
 .lang-bar { padding: 12px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); }
 .tiles[hidden] { display: none; }
+
+/* History and the undo bar */
+.hist-row { padding: 10px 0; border-top: 1px solid var(--line); }
+.undo-bar { gap: 6px; margin-bottom: 8px; }

@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, type KeyStatus } from "./api";
+import { History, keepWork } from "./history";
 import { newProject, type Project, type VoiceEntry } from "./types";
 import { uid } from "./script";
 import { DEFAULT_ENGINES_CFG, DEFAULT_PRICES, type EnginesCfg } from "./engines";
 import { estimateCost, spendLines, type SpendItem } from "./trust";
 
-export type Tab = "home" | "write" | "cast" | "perform" | "timeline" | "picture" | "export" | "studio" | "voices" | "engines" | "lab" | "settings";
+export type Tab = "home" | "write" | "cast" | "perform" | "timeline" | "picture" | "export" | "studio" | "history" | "voices" | "engines" | "lab" | "settings";
 
 export interface SpendAsk {
   title: string;
@@ -32,7 +33,14 @@ interface Ctx {
   openProject: (id: string) => Promise<void>;
   createProject: (name: string) => Promise<void>;
   closeProject: () => void;
-  edit: (fn: (p: Project) => Project) => void;
+  /** Change the open project. `key` names the kind of change: a quick run with the same key is one undo step; "" never merges. */
+  edit: (fn: (p: Project) => Project, key?: string) => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  /** Put a whole earlier state of the project in place (for example a version). It can be undone. */
+  replaceProject: (p: Project) => void;
   toast: (text: string, bad?: boolean) => void;
   confirmSpend: (a: SpendAsk) => Promise<boolean>;
   /** Cost lines and any over-budget warning for work about to be paid for, to add to a confirmation sheet. */
@@ -60,6 +68,13 @@ export function Provider({ children }: { children: ReactNode }) {
   const libRef = useRef<VoiceEntry[]>([]);
   const skipped = useRef(new Set<string>());
   const dirty = useRef(false);
+  const projectRef = useRef<Project | null>(null);
+  const hist = useRef(new History<Project>());
+  const [, bump] = useState(0);
+  const setP = useCallback((p: Project | null) => {
+    projectRef.current = p;
+    setProject(p);
+  }, []);
 
   const refreshKeys = useCallback(() => void api.keyStatus().then(setKeys).catch(() => undefined), []);
   useEffect(refreshKeys, [refreshKeys]);
@@ -91,10 +106,61 @@ export function Provider({ children }: { children: ReactNode }) {
     [toast],
   );
 
-  const edit = useCallback((fn: (p: Project) => Project) => {
-    dirty.current = true;
-    setProject((p) => (p ? { ...fn(p), updatedAt: new Date().toISOString() } : p));
-  }, []);
+  const edit = useCallback(
+    (fn: (p: Project) => Project, key = "auto") => {
+      const cur = projectRef.current;
+      if (!cur) return;
+      // A key starting with ~ is work that was paid for (a take, a ledger line): it is saved but is not an undo step.
+      // A new take also ends the undo history, so no undo can ever leave a take without the line it belongs to. Versions
+      // (History screen) still go further back.
+      if (key === "~take") hist.current.clear();
+      else if (!key.startsWith("~")) hist.current.record(cur, key, Date.now());
+      dirty.current = true;
+      setP({ ...fn(cur), updatedAt: new Date().toISOString() });
+      bump((n) => n + 1);
+    },
+    [setP],
+  );
+
+  const travel = useCallback(
+    (to: (cur: Project) => Project | null) => {
+      const cur = projectRef.current;
+      if (!cur) return;
+      const next = to(cur);
+      if (!next) return;
+      dirty.current = true;
+      setP({ ...keepWork(cur, next), updatedAt: new Date().toISOString() });
+      bump((n) => n + 1);
+    },
+    [setP],
+  );
+  const undo = useCallback(() => travel((cur) => hist.current.undo(cur)), [travel]);
+  const redo = useCallback(() => travel((cur) => hist.current.redo(cur)), [travel]);
+  const replaceProject = useCallback(
+    (p: Project) => {
+      const cur = projectRef.current;
+      if (!cur) return;
+      hist.current.record(cur, "", Date.now());
+      dirty.current = true;
+      setP({ ...keepWork(cur, { ...p, id: cur.id }), updatedAt: new Date().toISOString() });
+      bump((n) => n + 1);
+    },
+    [setP],
+  );
+
+  // Ctrl+Z, Ctrl+Shift+Z and Ctrl+Y work anywhere except inside a text box, which has its own undo.
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) (e.preventDefault(), undo());
+      else if ((key === "z" && e.shiftKey) || key === "y") (e.preventDefault(), redo());
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [undo, redo]);
 
   // Autosave shortly after the last change. Takes are written the moment they are made, so this only holds the plan.
   useEffect(() => {
@@ -114,14 +180,19 @@ export function Provider({ children }: { children: ReactNode }) {
       try {
         const p = await api.projectLoad(id);
         dirty.current = false;
-        setProject(p);
+        hist.current.clear();
+        setP(p);
+        bump((n) => n + 1);
         setSaving("idle");
         setTab("write");
+        // Anchor the state as opened, and make the daily backup if it is due. Neither blocks the screen.
+        void api.versionSave(id, "opened").catch(() => undefined);
+        void api.backupAuto(id).catch(() => undefined);
       } catch (e) {
         toast((e as Error).message, true);
       }
     },
-    [toast],
+    [toast, setP],
   );
 
   const createProject = useCallback(
@@ -131,20 +202,25 @@ export function Provider({ children }: { children: ReactNode }) {
       try {
         await api.projectSave(p);
         dirty.current = false;
-        setProject(p);
+        hist.current.clear();
+        setP(p);
+        bump((n) => n + 1);
         setSaving("saved");
         setTab("write");
       } catch (e) {
         toast((e as Error).message, true);
       }
     },
-    [toast],
+    [toast, setP],
   );
 
   const closeProject = useCallback(() => {
-    setProject(null);
+    if (projectRef.current) void api.versionSave(projectRef.current.id, "closed").catch(() => undefined);
+    hist.current.clear();
+    setP(null);
+    bump((n) => n + 1);
     setTab("home");
-  }, []);
+  }, [setP]);
 
   const confirmSpend = useCallback((a: SpendAsk) => {
     // A budget warning is never skipped, even if the owner chose not to be asked again for single items.
@@ -157,14 +233,15 @@ export function Provider({ children }: { children: ReactNode }) {
   const addLedger = useCallback(
     (e: { kind: "speech" | "sound" | "director" | "design" | "sample" | "music"; engine: string; chars: number; items: SpendItem[]; note?: string }) => {
       const cost = estimateCost(engines.prices ?? DEFAULT_PRICES, e.items).cost;
-      edit((p) => ({ ...p, ledger: [...(p.ledger ?? []), { at: new Date().toISOString(), kind: e.kind, engine: e.engine, chars: e.chars, cost, note: e.note }] }));
+      edit((p) => ({ ...p, ledger: [...(p.ledger ?? []), { at: new Date().toISOString(), kind: e.kind, engine: e.engine, chars: e.chars, cost, note: e.note }] }), "~ledger");
     },
     [engines.prices, edit],
   );
 
   const value = useMemo<Ctx>(
-    () => ({ tab, go: setTab, keys, refreshKeys, engines, saveEngines, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, toast, confirmSpend, priceLines, addLedger }),
-    [tab, keys, refreshKeys, engines, saveEngines, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, toast, confirmSpend, priceLines, addLedger],
+    () => ({ tab, go: setTab, keys, refreshKeys, engines, saveEngines, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, undo, redo, canUndo: hist.current.canUndo(), canRedo: hist.current.canRedo(), replaceProject, toast, confirmSpend, priceLines, addLedger }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tab, keys, refreshKeys, engines, saveEngines, library, saveLibrary, project, saving, openProject, createProject, closeProject, edit, undo, redo, replaceProject, toast, confirmSpend, priceLines, addLedger],
   );
 
   return (

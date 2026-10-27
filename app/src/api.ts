@@ -60,6 +60,20 @@ export interface VideoInfo {
 }
 export const VIDEO_EXTENSIONS = ["mp4", "mov", "m4v", "webm", "mkv", "avi", "mpg", "mpeg"];
 
+export interface VersionInfo {
+  id: string;
+  at: string;
+  label: string;
+  bytes: number;
+}
+export interface BackupInfo {
+  file: string;
+  projectId: string;
+  name: string;
+  at: string;
+  bytes: number;
+  takes: number;
+}
 export interface FfmpegStatus {
   installed: boolean;
   source: "greenroom" | "system" | null;
@@ -128,6 +142,13 @@ const real = {
   takeRead: (project: string, take: string) => call<Audio>("take_read", { project, take }),
   exportWrite: (project: string, folder: string, filename: string, audioB64: string) => call<string>("export_write", { project, folder, filename, audioB64 }),
   libraryLoad: async () => JSON.parse(await call<string>("library_load")) as VoiceEntry[],
+  versionSave: (project: string, label: string) => call<string | null>("version_save", { project, label }),
+  versionList: (project: string) => call<VersionInfo[]>("version_list", { project }),
+  versionLoad: async (project: string, id: string) => JSON.parse(await call<string>("version_load", { project, id })) as Project,
+  backupNow: (project: string) => call<string>("backup_now", { project }),
+  backupAuto: (project: string) => call<string | null>("backup_auto", { project }),
+  backupList: () => call<BackupInfo[]>("backup_list"),
+  backupRestore: (file: string) => call<string>("backup_restore", { file }),
   sheetLoad: () => call<string>("sheet_load"),
   sheetSave: (json: string) => call<void>("sheet_save", { json }),
   sheetAudioWrite: (id: string, audioB64: string) => call<void>("sheet_audio_write", { id, audioB64 }),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Provider, useApp, type Tab } from "./ctx";
-import { Cast as CastIcon, Export as ExportIcon, Eye, Gear, Home as HomeIcon, Wave, Layers, Shield, Mark, Render, Script, Speaker, Voices as VoicesIcon } from "./icons";
+import { Cast as CastIcon, Clock, Export as ExportIcon, Eye, Gear, Home as HomeIcon, Wave, Layers, Shield, Mark, Render, Script, Speaker, Voices as VoicesIcon } from "./icons";
 import Cast from "./screens/Cast";
 import Engines from "./screens/Engines";
 import Export from "./screens/Export";
@@ -10,6 +10,7 @@ import Lab from "./screens/Lab";
 import Perform from "./screens/Perform";
 import PictureScreen from "./screens/Picture";
 import Timeline from "./screens/Timeline";
+import History from "./screens/History";
 import Settings from "./screens/Settings";
 import Voices from "./screens/Voices";
 import Write from "./screens/Write";
@@ -34,7 +35,7 @@ export default function App() {
 }
 
 function Shell() {
-  const { tab, go, project, closeProject, saving } = useApp();
+  const { tab, go, project, closeProject, saving, undo, redo, canUndo, canRedo } = useApp();
   const Item = ({ id, label, icon, count, off }: { id: Tab; label: string; icon: React.ReactNode; count?: string; off?: boolean }) => (
     <button className={tab === id ? "nav on" : "nav"} onClick={() => go(id)} disabled={off} aria-current={tab === id ? "page" : undefined}>
       {icon}
@@ -43,7 +44,7 @@ function Shell() {
     </button>
   );
   const takes = project ? project.lines.filter((l) => l.takes.length > 0).length : 0;
-  const screens: Record<Tab, React.ReactNode> = { home: <Home />, write: <Write />, cast: <Cast />, perform: <Perform />, timeline: <Timeline />, picture: <PictureScreen />, export: <Export />, studio: <Studio />, voices: <Voices />, engines: <Engines />, lab: <Lab />, settings: <Settings /> };
+  const screens: Record<Tab, React.ReactNode> = { home: <Home />, write: <Write />, cast: <Cast />, perform: <Perform />, timeline: <Timeline />, picture: <PictureScreen />, export: <Export />, studio: <Studio />, history: <History />, voices: <Voices />, engines: <Engines />, lab: <Lab />, settings: <Settings /> };
 
   return (
     <div className="shell">
@@ -63,6 +64,7 @@ function Shell() {
             <Item id="picture" label="Picture" icon={<Eye size={18} />} count={project.picture ? "on" : undefined} />
             <Item id="export" label="Export" icon={<ExportIcon size={18} />} />
             <Item id="studio" label="Studio" icon={<Shield size={18} />} />
+            <Item id="history" label="History" icon={<Clock size={18} />} />
           </>
         )}
         <h3>Library</h3>
@@ -73,6 +75,14 @@ function Shell() {
         <div className="rail-foot">
           {project && (
             <>
+              <div className="row undo-bar">
+                <button className="sm" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+                  Undo
+                </button>
+                <button className="sm" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">
+                  Redo
+                </button>
+              </div>
               <div aria-live="polite">{saving === "saving" ? "Saving…" : saving === "saved" ? "Saved" : saving === "error" ? "Not saved" : ""}</div>
               <button className="sm ghost" onClick={closeProject}>
                 Close project

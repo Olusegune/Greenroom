@@ -14,6 +14,8 @@ const takes = new Map<string, { audioB64: string; mime: string }>();
 let library: VoiceEntry[] = [];
 let casts: SavedCast[] = [];
 let sheetJson = "{}";
+const versions = new Map<string, { id: string; at: string; label: string; json: string }[]>();
+let backups: { file: string; projectId: string; name: string; at: string; bytes: number; takes: number; json: string }[] = [];
 const sheetAudio = new Map<string, string>();
 let engines: Partial<EnginesCfg> = {};
 let piperInstalled = false;
@@ -86,6 +88,41 @@ export const mock: Api = {
   exportWrite: async (_p, folder, filename) => `C:\\Users\\you\\Documents\\Greenroom\\projects\\demo\\exports\\${folder ? folder + "\\" : ""}${filename}`,
   libraryLoad: async () => structuredClone(library),
   librarySave: async (v) => void (library = structuredClone(v)),
+  versionSave: async (project: string, label: string) => {
+    const p = projects.get(project);
+    if (!p) throw new Error("Could not read the project.");
+    const list = versions.get(project) ?? [];
+    const json = JSON.stringify(p);
+    if (list[0]?.json === json) return null;
+    const at = new Date().toISOString();
+    const id = at.replace(/[-:]/g, "").slice(0, 15) + "Z" + (label ? "-" + label.toLowerCase().replace(/[^a-z0-9]+/g, "-") : "") + list.length;
+    versions.set(project, [{ id, at, label, json }, ...list].slice(0, 60));
+    return id;
+  },
+  versionList: async (project: string) => (versions.get(project) ?? []).map((v) => ({ id: v.id, at: v.at, label: v.label, bytes: v.json.length })),
+  versionLoad: async (project: string, id: string) => {
+    const v = versions.get(project)?.find((x) => x.id === id);
+    if (!v) throw new Error("That version is missing.");
+    return JSON.parse(v.json) as Project;
+  },
+  backupNow: async (project: string) => {
+    const p = projects.get(project);
+    if (!p) throw new Error("Could not read the project.");
+    const at = new Date().toISOString();
+    const file = `${project}__${at.replace(/[-:]/g, "").slice(0, 15)}Z.zip`;
+    backups = [{ file, projectId: project, name: p.name, at, bytes: JSON.stringify(p).length + 40000, takes: p.lines.reduce((n, l) => n + l.takes.length, 0), json: JSON.stringify(p) }, ...backups].slice(0, 5);
+    return "C:\\Users\\you\\Documents\\Greenroom\\backups\\" + file;
+  },
+  backupAuto: async () => null,
+  backupList: async () => backups.map(({ json: _j, ...b }) => (void _j, b)),
+  backupRestore: async (file: string) => {
+    const b = backups.find((x) => x.file === file);
+    if (!b) throw new Error("That backup is not valid.");
+    const p = JSON.parse(b.json) as Project;
+    const id = "p-restored" + projects.size;
+    projects.set(id, { ...p, id, name: p.name + " (restored)", updatedAt: new Date().toISOString() });
+    return id;
+  },
   sheetLoad: async () => sheetJson,
   sheetSave: async (json: string) => void (sheetJson = json),
   sheetAudioWrite: async (id: string, audioB64: string) => void sheetAudio.set(id, audioB64),
