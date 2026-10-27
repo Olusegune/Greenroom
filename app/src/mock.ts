@@ -159,6 +159,17 @@ export const mock: Api = {
       return { id, ext: "wav", name: `${req.title} (take ${i + 1})`, bytes: 1000, sha256: "e".repeat(64), seconds: 20 + i * 4 };
     });
   },
+  updateCheck: async () => {
+    await wait(600);
+    // Demo only: add ?demo-update to the address to see what an available update looks like.
+    return typeof location !== "undefined" && location.search.includes("demo-update") ? { version: "9.9.9", notes: "Demo notes: faster exports and a calmer Studio.", date: "2026-11-01T00:00:00Z" } : null;
+  },
+  updateInstall: async (onProgress: (done: number, total: number) => void) => {
+    for (let i = 1; i <= 5; i++) {
+      await wait(200);
+      onProgress(i * 200_000, 1_000_000);
+    }
+  },
   ffmpegStatus: async () => ({ installed: ffmpegInstalled, source: ffmpegInstalled ? ("greenroom" as const) : null }),
   ffmpegInstall: async () => (await wait(900), void (ffmpegInstalled = true)),
   videoMux: async (_p: string, video: string, _m: string, _k: boolean) => {

@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { api, type KeyName } from "../api";
 import { useApp } from "../ctx";
+import { checkForUpdates, installUpdate, useUpdates } from "../updates";
 import { APP_VERSION } from "../version";
 
 export default function Settings() {
-  const { keys, refreshKeys } = useApp();
+  const { keys, refreshKeys, engines, saveEngines, saving } = useApp();
+  const u = useUpdates();
   return (
     <section>
       <div>
@@ -14,6 +16,55 @@ export default function Settings() {
       <KeyCard mark="E" tone="e1" title="ElevenLabs" hint="From elevenlabs.io, Developers, API keys. Used for speech, sound effects, voice design and cloning." fields={[["elevenlabs", "API key"]]} has={keys.elevenlabs} changed={refreshKeys} />
       <KeyCard mark="V" tone="e2" title="VoiceKiller" hint="From voicekiller.com, API page. It needs both the API key and your user id." fields={[["voicekiller", "API key"], ["voicekiller-userid", "User id"]]} has={keys.voicekiller} changed={refreshKeys} />
       <KeyCard mark="K" tone="e3" title="Kie" hint="From kie.ai, API Key page. Used for Kie voices, sound effects, the AI Director and Suno music." fields={[["kie", "API key"]]} has={keys.kie} changed={refreshKeys} />
+      <div className="card stack" id="updates">
+        <div className="row between wrap">
+          <span className="eng-id">
+            <strong>Updates</strong>
+            <span className="muted small">
+              You have Greenroom {APP_VERSION}.{" "}
+              {u.phase === "none" ? "This is the newest version." : u.phase === "available" && u.info ? `Version ${u.info.version} is available.` : u.phase === "checking" ? "Looking…" : ""}
+            </span>
+          </span>
+          {u.phase !== "available" && u.phase !== "installing" && (
+            <button onClick={() => void checkForUpdates()} disabled={u.phase === "checking"}>
+              {u.phase === "checking" ? "Looking…" : "Check for updates"}
+            </button>
+          )}
+        </div>
+        {u.phase === "error" && (
+          <p className="err-text small" role="alert">
+            {u.error}
+          </p>
+        )}
+        {(u.phase === "available" || u.phase === "installing") && u.info && (
+          <div className="update-box">
+            <strong>Greenroom {u.info.version}</strong>
+            {u.info.notes && <p className="muted small" style={{ whiteSpace: "pre-wrap", margin: "4px 0 0" }}>{u.info.notes}</p>}
+            {u.phase === "installing" ? (
+              <div style={{ marginTop: 10 }}>
+                <div className="progress" aria-hidden="true">
+                  <i style={{ width: u.progress < 0 ? "40%" : `${Math.round(u.progress * 100)}%` }} />
+                </div>
+                <p className="muted small" role="status">
+                  {u.progress >= 1 ? "Installing and restarting…" : u.progress < 0 ? "Downloading…" : `Downloading… ${Math.round(u.progress * 100)}%`}
+                </p>
+              </div>
+            ) : (
+              <div className="row wrap" style={{ marginTop: 10 }}>
+                <button className="primary" onClick={() => void installUpdate()} disabled={saving === "saving"}>
+                  Download, install and restart
+                </button>
+                <span className="muted small">Greenroom closes and opens again. Your projects are saved automatically first. The download is checked against Greenroom's signature and is refused if it does not match.</span>
+              </div>
+            )}
+          </div>
+        )}
+        <label className="row small">
+          <input type="checkbox" checked={engines.updateCheck !== false} onChange={(e) => saveEngines({ ...engines, updateCheck: e.target.checked })} /> Look for a new version when Greenroom starts
+        </label>
+        <p className="muted small">Looking sends only an ordinary web request to GitHub (which can see your internet address). Nothing about you or your projects is sent, and nothing is ever installed unless you press the button.</p>
+      </div>
+
       <div className="card stack">
         <h2>About</h2>
         <p className="muted small">

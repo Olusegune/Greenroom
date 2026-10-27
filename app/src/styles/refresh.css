@@ -204,3 +204,6 @@ details.card > summary { cursor: pointer; }
 .eng-id strong { font-size: 16px; }
 .eng-body { padding-top: 6px; }
 .eng[open] > summary { margin-bottom: 8px; }
+
+/* Updates */
+.update-box { padding: 14px 16px; border-radius: 14px; border: 1px solid var(--accent-line); background: var(--accent-wash); }

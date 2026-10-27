@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { inApp } from "./api";
 import { Provider, useApp, type Tab } from "./ctx";
 import { Cast as CastIcon, Clock, Export as ExportIcon, Eye, Gear, Home as HomeIcon, Wave, Layers, Shield, Mark, Render, Script, Speaker, Voices as VoicesIcon } from "./icons";
 import Cast from "./screens/Cast";
@@ -11,6 +12,7 @@ import Perform from "./screens/Perform";
 import PictureScreen from "./screens/Picture";
 import Timeline from "./screens/Timeline";
 import History from "./screens/History";
+import { checkForUpdates, useUpdates } from "./updates";
 import Settings from "./screens/Settings";
 import Voices from "./screens/Voices";
 import Write from "./screens/Write";
@@ -35,7 +37,16 @@ export default function App() {
 }
 
 function Shell() {
-  const { tab, go, project, closeProject, saving, undo, redo, canUndo, canRedo } = useApp();
+  const { tab, go, project, closeProject, saving, undo, redo, canUndo, canRedo, engines } = useApp();
+  const upd = useUpdates();
+  // Look once shortly after start (not at the instant of launch, so saved settings are loaded first). Quiet on failure.
+  const updateCheck = useRef(engines.updateCheck);
+  updateCheck.current = engines.updateCheck;
+  useEffect(() => {
+    if (!inApp()) return;
+    const t = setTimeout(() => updateCheck.current !== false && void checkForUpdates(true), 4000);
+    return () => clearTimeout(t);
+  }, []);
   const Item = ({ id, label, icon, count, off }: { id: Tab; label: string; icon: React.ReactNode; count?: string; off?: boolean }) => (
     <button className={tab === id ? "nav on" : "nav"} onClick={() => go(id)} disabled={off} aria-current={tab === id ? "page" : undefined}>
       {icon}
@@ -71,7 +82,7 @@ function Shell() {
         <Item id="voices" label="Voices" icon={<VoicesIcon size={18} />} />
         <Item id="engines" label="Engines" icon={<Layers size={18} />} />
         <Item id="lab" label="Voice lab" icon={<Speaker size={18} />} />
-        <Item id="settings" label="Settings" icon={<Gear size={18} />} />
+        <Item id="settings" label="Settings" icon={<Gear size={18} />} count={upd.phase === "available" ? "update" : undefined} />
         <div className="rail-foot">
           {project && (
             <>

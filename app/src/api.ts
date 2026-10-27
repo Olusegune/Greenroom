@@ -74,6 +74,11 @@ export interface BackupInfo {
   bytes: number;
   takes: number;
 }
+export interface UpdateInfo {
+  version: string;
+  notes: string;
+  date: string;
+}
 export interface FfmpegStatus {
   installed: boolean;
   source: "greenroom" | "system" | null;
@@ -120,6 +125,9 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
     throw new Error(typeof e === "string" ? e : "Something went wrong.");
   }
 }
+
+import type { Update } from "@tauri-apps/plugin-updater";
+let pendingUpdate: Update | null = null;
 
 const real = {
   keyStatus: () => call<KeyStatus>("key_status"),
@@ -172,6 +180,25 @@ const real = {
   pickAudio: async (): Promise<string | null> => {
     const r = await openDialog({ multiple: false, directory: false, filters: [{ name: "Audio", extensions: AUDIO_EXTENSIONS }] });
     return typeof r === "string" ? r : null;
+  },
+  /** Asks GitHub whether a newer signed Greenroom exists. Sends nothing but the request. Null when this is the newest. */
+  updateCheck: async (): Promise<UpdateInfo | null> => {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const u = await check();
+    pendingUpdate = u;
+    return u ? { version: u.version, notes: u.body ?? "", date: u.date ?? "" } : null;
+  },
+  /** Downloads the update, checks its signature, installs it and restarts. Only called from a button the owner pressed. */
+  updateInstall: async (onProgress: (done: number, total: number) => void): Promise<void> => {
+    if (!pendingUpdate) throw new Error("Check for updates first.");
+    let total = 0;
+    let done = 0;
+    await pendingUpdate.downloadAndInstall((e) => {
+      if (e.event === "Started") total = e.data.contentLength ?? 0;
+      else if (e.event === "Progress") onProgress((done += e.data.chunkLength), total);
+    });
+    const { relaunch } = await import("@tauri-apps/plugin-process");
+    await relaunch();
   },
   ffmpegStatus: () => call<FfmpegStatus>("ffmpeg_status"),
   ffmpegInstall: () => call<void>("ffmpeg_install"),

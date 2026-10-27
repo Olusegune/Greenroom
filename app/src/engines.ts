@@ -79,6 +79,8 @@ export const soundEngineOf = (cfg: { soundEngine?: SoundEngine }) => SOUND_ENGIN
 export interface EnginesCfg {
   elevenModel: ElevenModel;
   quality: Quality;
+  /** Look for a new Greenroom when it starts. Off means only when you press the button. Default on. */
+  updateCheck?: boolean;
   /** Which engine makes sound clips and the atmosphere. */
   soundEngine?: SoundEngine;
   prices: Prices;
